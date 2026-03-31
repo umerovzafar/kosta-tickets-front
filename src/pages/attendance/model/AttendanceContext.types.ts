@@ -19,7 +19,9 @@ export type AttendanceContextValue = {
   setTypeFilter: (v: string) => void
 
   settings: WorkdaySettings
-  setSettings: (v: WorkdaySettings) => void
+  settingsLoading: boolean
+  settingsError: string | null
+  saveWorkdaySettings: (value: WorkdaySettings) => Promise<void>
   isSettingsOpen: boolean
   setIsSettingsOpen: (v: boolean) => void
 
@@ -36,5 +38,6 @@ export type AttendanceContextValue = {
   handleReset: () => void
   handleExportExcel: () => void
 
-  TYPE_OPTIONS: typeof import('./constants').TYPE_OPTIONS
+  typeFilterOptions: readonly { value: string; label: string }[]
+  isDailyMode: boolean
 }

@@ -10,6 +10,12 @@ import { BASE } from './lib/constants'
 import { buildTicketsQuery } from './lib/query'
 import { parseApiError } from './lib/parseError'
 
+/** URL для скачивания вложения: GET /api/v1/tickets/attachments/{filename} */
+export function getAttachmentUrl(attachmentPath: string): string {
+  const filename = attachmentPath.startsWith('/') ? attachmentPath.slice(1) : attachmentPath
+  return `${BASE}/attachments/${filename}`
+}
+
 export async function getStatuses(): Promise<StatusItem[]> {
   const res = await apiFetch(`${BASE}/statuses`)
   if (!res.ok) throw new Error(await parseApiError(res, 'Failed to fetch statuses'))
@@ -100,9 +106,4 @@ export async function updateComment(ticketUuid: string, commentId: number, conte
   })
   if (!res.ok) throw new Error(await parseApiError(res, 'Failed to update comment'))
   return res.json()
-}
-
-export async function deleteComment(ticketUuid: string, commentId: number): Promise<void> {
-  const res = await apiFetch(`${BASE}/${ticketUuid}/comments/${commentId}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(await parseApiError(res, 'Failed to delete comment'))
 }

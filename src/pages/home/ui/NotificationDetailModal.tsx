@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { NotificationItem } from '@entities/notifications/wsClient'
+import { AuthImg } from '@shared/ui'
 
 type NotificationDetailModalProps = {
   notification: NotificationItem
@@ -31,6 +32,11 @@ export const NotificationDetailModal = memo(function NotificationDetailModal({ n
             <span>{new Date(notification.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
           <div className="tm__body-text">{notification.description || notification.title}</div>
+          {notification.photo_path && (
+            <div className="tm__body-photo">
+              <AuthImg mediaPath={notification.photo_path} alt="" className="tm__body-img" />
+            </div>
+          )}
         </div>
         <div className="tm__foot">
           <button type="button" className="tm__btn tm__btn--ghost" onClick={onClose}>Закрыть</button>

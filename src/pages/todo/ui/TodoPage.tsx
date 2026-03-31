@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatedLink } from '@shared/ui'
 import { routes } from '@shared/config'
+import { fetchMediaBlob } from '@shared/api'
 import { buildMonthGrid, type TodoCard, type ArchivedCard, type ColumnId } from '../services/todoUtils'
 import { deriveColumnColors, deriveThemeFromImage, type ThemeVars } from '../services/todoTheme'
 import {
@@ -9,8 +10,10 @@ import {
   getCalendarEvents,
   connectOutlookCalendar,
   createCalendarEvent,
+  CALENDAR_NOT_CONNECTED_MSG,
   type CalendarEvent,
 } from '../services/calendarApi'
+import { getMe, uploadDesktopBackground, deleteDesktopBackground } from '@entities/user'
 import { setCalendarCache } from '../services/calendarCache'
 import {
   IconBack,
@@ -19,6 +22,7 @@ import {
   IconDownload,
   IconUpload,
   IconPlus,
+  IconTrash,
 } from './TodoIcons'
 import { TodoPlanner } from './TodoPlanner'
 import { TodoColumn } from './TodoColumn'
@@ -33,6 +37,7 @@ export function TodoPage() {
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
   const [prevBackground, setPrevBackground] = useState<string | null>(null)
   const [bgTransitioning, setBgTransitioning] = useState(false)
+  const [bgUploading, setBgUploading] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const defaultColumnIds = ['today', 'week', 'later'] as const
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => [...defaultColumnIds])
@@ -51,6 +56,14 @@ export function TodoPage() {
   const dropTargetCardColumnRef = useRef<ColumnId | null>(null)
   const [dragPreviewPosition, setDragPreviewPosition] = useState<{ x: number; y: number } | null>(null)
   const cardDragOffsetRef = useRef({ x: 0, y: 0 })
+  const pendingCardDragRef = useRef<{
+    columnId: string
+    cardId: string
+    cardRect: DOMRect
+    startX: number
+    startY: number
+  } | null>(null)
+  const [pendingCardDragActive, setPendingCardDragActive] = useState(false)
   const [calendarColumnOverrides, setCalendarColumnOverrides] = useState<Record<string, ColumnId>>(() => {
     const CALENDAR_OVERRIDES_KEY = 'todoCalendarColumnOverrides'
     try {
@@ -86,6 +99,8 @@ export function TodoPage() {
   const [calendarConnected, setCalendarConnected] = useState(false)
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [calendarLoading, setCalendarLoading] = useState(false)
+  const [calendarConnectError, setCalendarConnectError] = useState<string | null>(null)
+  const calendarEventsFetchLock = useRef(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [, setSplashOut] = useState(false)
   const [, setSplashDone] = useState(false)
@@ -220,29 +235,66 @@ export function TodoPage() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [menuOpen])
 
-  const handlePickBackground = () => {
-    fileInputRef.current?.click()
-    setMenuOpen(false)
-  }
-
-  const handleBackgroundChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const url = URL.createObjectURL(file)
+  const applyBackground = useCallback((url: string) => {
     const img = new Image()
     img.onload = () => {
-      setPrevBackground(backgroundImage)
-      setBackgroundImage(url)
+      setPrevBackground((prev) => prev)
+      setBackgroundImage((prev) => {
+        setPrevBackground(prev)
+        return url
+      })
       setBgTransitioning(true)
       setTimeout(() => {
         setBgTransitioning(false)
         setPrevBackground((prev) => {
-          if (prev && prev !== url) URL.revokeObjectURL(prev)
+          if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
           return null
         })
       }, 1300)
     }
     img.src = url
+  }, [])
+
+  const handlePickBackground = () => {
+    fileInputRef.current?.click()
+    setMenuOpen(false)
+  }
+
+  const handleBackgroundChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    const blobUrl = URL.createObjectURL(file)
+    applyBackground(blobUrl)
+    setBgUploading(true)
+    try {
+      const user = await uploadDesktopBackground(file)
+      if (user.desktop_background) {
+        const mediaBlobUrl = await fetchMediaBlob(user.desktop_background)
+        URL.revokeObjectURL(blobUrl)
+        applyBackground(mediaBlobUrl)
+      }
+    } catch {
+      // keep the blob preview on error
+    } finally {
+      setBgUploading(false)
+    }
+  }
+
+  const handleDeleteBackground = async () => {
+    setMenuOpen(false)
+    try {
+      await deleteDesktopBackground()
+      setPrevBackground(backgroundImage)
+      setBackgroundImage(null)
+      setBgTransitioning(false)
+      setPrevBackground((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+        return null
+      })
+    } catch {
+      // ignore
+    }
   }
 
   useEffect(() => {
@@ -260,6 +312,21 @@ export function TodoPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [backgroundImage])
+
+  useEffect(() => {
+    let cancelled = false
+    getMe()
+      .then((user) => {
+        if (!cancelled && user.desktop_background) {
+          return fetchMediaBlob(user.desktop_background).then((blobUrl) => {
+            if (!cancelled) applyBackground(blobUrl)
+            else URL.revokeObjectURL(blobUrl)
+          })
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [applyBackground])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -293,8 +360,14 @@ export function TodoPage() {
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => {
+    if (calendarConnected) setCalendarConnectError(null)
+  }, [calendarConnected])
+
   const fetchCalendarEvents = useCallback(() => {
     if (!calendarConnected) return
+    if (calendarEventsFetchLock.current) return
+    calendarEventsFetchLock.current = true
     setCalendarLoading(true)
     const today = new Date()
     const todayStart = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -311,15 +384,26 @@ export function TodoPage() {
         setCalendarEvents(events)
         setCalendarCache(events, true)
       })
-      .catch(() => {})
-      .finally(() => setCalendarLoading(false))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : ''
+        if (msg === CALENDAR_NOT_CONNECTED_MSG) {
+          setCalendarConnected(false)
+          setCalendarCache([], false)
+        }
+      })
+      .finally(() => {
+        calendarEventsFetchLock.current = false
+        setCalendarLoading(false)
+      })
   }, [calendarConnected, currentMonth])
 
   useEffect(() => { fetchCalendarEvents() }, [fetchCalendarEvents])
 
   const handleConnectCalendar = useCallback(() => {
+    setCalendarConnectError(null)
     connectOutlookCalendar().catch((err) => {
-      console.error('Calendar connect error:', err)
+      const msg = err instanceof Error ? err.message : 'Не удалось подключить календарь'
+      setCalendarConnectError(msg)
     })
   }, [])
 
@@ -587,13 +671,15 @@ export function TodoPage() {
   }, [])
 
   const handleCardDragStart = useCallback((e: React.MouseEvent, columnId: string, cardId: string, cardRect: DOMRect) => {
-    e.preventDefault()
-    cardDragOffsetRef.current = {
-      x: e.clientX - cardRect.left,
-      y: e.clientY - cardRect.top,
+    if (e.button !== 0) return
+    pendingCardDragRef.current = {
+      columnId,
+      cardId,
+      cardRect,
+      startX: e.clientX,
+      startY: e.clientY,
     }
-    setDragPreviewPosition({ x: cardRect.left, y: cardRect.top })
-    setDraggingCard({ columnId, cardId })
+    setPendingCardDragActive(true)
   }, [])
 
   const handleSortCards = useCallback((colId: string, mode: 'az' | 'za' | 'newest' | 'oldest' | 'done') => {
@@ -641,24 +727,49 @@ export function TodoPage() {
   }, [mergedCards])
 
   useEffect(() => {
-    if (draggingCard === null) return
+    if (!pendingCardDragActive && draggingCard === null) return
+
+    const DRAG_THRESHOLD = 6
+
     const onMove = (e: MouseEvent) => {
-      setDragPreviewPosition({
-        x: e.clientX - cardDragOffsetRef.current.x,
-        y: e.clientY - cardDragOffsetRef.current.y,
-      })
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      const columnEl = el?.closest?.('[data-todo-column-id]') as HTMLElement | null
-      const id = columnEl?.getAttribute('data-todo-column-id') as ColumnId | null
-      if (id && columnOrder.includes(id)) {
-        dropTargetCardColumnRef.current = id
-        setDropTargetCardColumn(id)
-      } else {
-        dropTargetCardColumnRef.current = null
-        setDropTargetCardColumn(null)
+      if (draggingCard === null && pendingCardDragRef.current) {
+        const { startX, startY, columnId, cardId, cardRect } = pendingCardDragRef.current
+        const dx = e.clientX - startX
+        const dy = e.clientY - startY
+        if (Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
+          cardDragOffsetRef.current = {
+            x: startX - cardRect.left,
+            y: startY - cardRect.top,
+          }
+          pendingCardDragRef.current = null
+          setPendingCardDragActive(false)
+          setDragPreviewPosition({ x: cardRect.left, y: cardRect.top })
+          setDraggingCard({ columnId, cardId })
+        }
+        return
+      }
+
+      if (draggingCard) {
+        setDragPreviewPosition({
+          x: e.clientX - cardDragOffsetRef.current.x,
+          y: e.clientY - cardDragOffsetRef.current.y,
+        })
+        const el = document.elementFromPoint(e.clientX, e.clientY)
+        const columnEl = el?.closest?.('[data-todo-column-id]') as HTMLElement | null
+        const id = columnEl?.getAttribute('data-todo-column-id') as ColumnId | null
+        if (id && columnOrder.includes(id)) {
+          dropTargetCardColumnRef.current = id
+          setDropTargetCardColumn(id)
+        } else {
+          dropTargetCardColumnRef.current = null
+          setDropTargetCardColumn(null)
+        }
       }
     }
+
     const onUp = () => {
+      pendingCardDragRef.current = null
+      setPendingCardDragActive(false)
       const target = dropTargetCardColumnRef.current
       if (draggingCard && target && draggingCard.columnId !== target) {
         handleMoveCard(draggingCard.columnId, draggingCard.cardId, target)
@@ -668,13 +779,14 @@ export function TodoPage() {
       setDropTargetCardColumn(null)
       setDragPreviewPosition(null)
     }
+
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     return () => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
-  }, [draggingCard, columnOrder, handleMoveCard])
+  }, [pendingCardDragActive, draggingCard, columnOrder, handleMoveCard])
 
   const handleArchiveCard = useCallback((columnId: string, cardId: string) => {
     setCards((prev) => {
@@ -784,10 +896,16 @@ export function TodoPage() {
                   </button>
                   {menuOpen && (
                     <div className="todo-page__menu-dropdown">
-                      <button type="button" className="todo-page__menu-item" onClick={handlePickBackground}>
+                      <button type="button" className="todo-page__menu-item" onClick={handlePickBackground} disabled={bgUploading}>
                         <span className="todo-page__menu-icon"><IconImage /></span>
-                        <span className="todo-page__menu-text">Фон рабочей области</span>
+                        <span className="todo-page__menu-text">{bgUploading ? 'Загрузка…' : 'Фон рабочей области'}</span>
                       </button>
+                      {backgroundImage && (
+                        <button type="button" className="todo-page__menu-item todo-page__menu-item--danger" onClick={handleDeleteBackground}>
+                          <span className="todo-page__menu-icon"><IconTrash /></span>
+                          <span className="todo-page__menu-text">Убрать фон</span>
+                        </button>
+                      )}
                       <button type="button" className="todo-page__menu-item">
                         <span className="todo-page__menu-icon"><IconSettings /></span>
                         <span className="todo-page__menu-text">Настройки</span>
@@ -833,6 +951,13 @@ export function TodoPage() {
               <span className="todo-column-drag-preview__title">{draggingColumnConfig.title}</span>
               <span className="todo-column-drag-preview__count">{draggingColumnCardCount}</span>
             </div>
+            {draggingColumnCardCount > 0 && (
+              <div className="todo-column-drag-preview__body">
+                <div className="todo-column-drag-preview__stub" />
+                {draggingColumnCardCount > 1 && <div className="todo-column-drag-preview__stub" />}
+                {draggingColumnCardCount > 2 && <div className="todo-column-drag-preview__stub" />}
+              </div>
+            )}
           </div>
         </div>,
         document.body
@@ -849,6 +974,7 @@ export function TodoPage() {
           onNextMonth={handleNextMonth}
           calendarConnected={calendarConnected}
           calendarEvents={calendarEvents}
+          calendarConnectError={calendarConnectError}
           onConnectCalendar={handleConnectCalendar}
           onAddEvent={handleOpenAddEvent}
           onEditEvent={() => {}}

@@ -1,12 +1,14 @@
 .app-error {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 1.5rem;
   background: var(--app-bg);
   position: relative;
   overflow: hidden;
+  font-family: inherit;
 }
 
 .app-error__bg {
@@ -19,87 +21,172 @@
 .app-error__mesh {
   position: absolute;
   inset: 0;
+  opacity: 0.55;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(99, 102, 241, 0.08), transparent 50%),
+    radial-gradient(ellipse 50% 35% at 0% 80%, rgba(239, 68, 68, 0.06), transparent 45%);
+}
+
+.app-error__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  opacity: 0.5;
+  animation: app-error-orb-float 14s ease-in-out infinite;
+}
+
+.app-error__orb--a {
+  width: min(42vw, 320px);
+  height: min(42vw, 320px);
+  top: -8%;
+  right: -5%;
+  background: rgba(99, 102, 241, 0.25);
+}
+
+.app-error__orb--b {
+  width: min(38vw, 280px);
+  height: min(38vw, 280px);
+  bottom: -12%;
+  left: -8%;
+  background: rgba(59, 130, 246, 0.2);
+  animation-delay: -7s;
+}
+
+@keyframes app-error-orb-float {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-4%, 3%) scale(1.05);
+  }
 }
 
 .app-error__card {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 420px;
-  padding: 2.5rem 2rem;
+  max-width: 400px;
+  padding: 2rem 1.75rem 1.85rem;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
-  border-radius: 24px;
+  border-radius: 20px;
   box-shadow:
-    0 0 0 1px var(--app-border) inset,
-    0 24px 64px rgba(0, 0, 0, 0.08),
-    0 0 48px rgba(239, 68, 68, 0.04);
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset,
+    0 2px 4px rgba(15, 23, 42, 0.04),
+    0 20px 48px rgba(15, 23, 42, 0.1);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  animation: app-error-card-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: app-error-card-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.app-error__card-accent {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40%;
+  height: 3px;
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(90deg, transparent, var(--app-error), #f97316, transparent);
+  opacity: 0.85;
 }
 
 .app-error__glow {
-  display: none;
+  position: absolute;
+  top: 3.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-error__icon-wrap {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 1rem;
 }
 
 .app-error__icon {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
-  background: var(--app-error-bg);
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--app-error-bg), rgba(239, 68, 68, 0.06));
   color: var(--app-error);
-  margin-bottom: 1.25rem;
-  animation: app-error-icon-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+  border: 1px solid var(--app-error-border);
+  box-shadow: 0 4px 16px var(--app-error-focus);
+  animation: app-error-icon-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
 }
 
 .app-error__icon svg {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+}
+
+.app-error__eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+  animation: app-error-fade-in 0.45s ease 0.12s both;
 }
 
 .app-error__title {
-  margin: 0 0 0.5rem;
-  font-size: 1.5rem;
+  margin: 0 0 0.65rem;
+  font-size: 1.375rem;
   font-weight: 700;
   color: var(--app-text);
-  letter-spacing: -0.02em;
-  animation: app-error-fade-in 0.4s ease 0.15s both;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  animation: app-error-fade-in 0.45s ease 0.16s both;
 }
 
 .app-error__text {
-  margin: 0 0 1.75rem;
-  font-size: 0.9375rem;
+  margin: 0 0 1.5rem;
+  font-size: 0.90625rem;
   color: var(--app-muted);
-  line-height: 1.6;
-  animation: app-error-fade-in 0.4s ease 0.2s both;
+  line-height: 1.55;
+  max-width: 32rem;
+  animation: app-error-fade-in 0.45s ease 0.2s both;
 }
 
 .app-error__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.65rem;
   justify-content: center;
   width: 100%;
-  animation: app-error-fade-in 0.4s ease 0.25s both;
+  animation: app-error-fade-in 0.45s ease 0.24s both;
 }
 
 .app-error__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 0.9375rem;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  padding: 0.65rem 1.35rem;
+  font-size: 0.875rem;
   font-weight: 600;
   border-radius: 12px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
   border: none;
   font-family: inherit;
 }
@@ -109,20 +196,22 @@
 }
 
 .app-error__btn svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   flex-shrink: 0;
 }
 
 .app-error__btn--primary {
-  background: var(--app-accent);
+  flex: 1 1 auto;
+  min-width: 8.5rem;
+  background: linear-gradient(180deg, var(--app-accent) 0%, var(--app-accent-hover, var(--app-accent)) 100%);
   color: #fff;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
 }
 
 .app-error__btn--primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.42);
 }
 
 .app-error__btn--primary:active:not(:disabled) {
@@ -131,7 +220,7 @@
 
 .app-error__btn--primary:disabled {
   cursor: not-allowed;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .app-error__btn--primary.app-error__btn--loading {
@@ -141,54 +230,58 @@
 .app-error__spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   border-top-color: #fff;
   border-radius: 50%;
-  animation: app-error-spin 0.7s linear infinite;
+  animation: app-error-spin 0.65s linear infinite;
 }
 
 .app-error__btn--secondary {
+  flex: 1 1 auto;
+  min-width: 8.5rem;
   background: var(--app-surface-soft);
   color: var(--app-text);
   border: 1px solid var(--app-border);
 }
 
 .app-error__btn--secondary:hover {
-  background: var(--app-border);
+  background: var(--app-bg-soft, var(--app-surface-soft));
   border-color: var(--app-border-hover);
   transform: translateY(-1px);
 }
 
 @keyframes app-error-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes app-error-card-in {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(16px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes app-error-icon-in {
   from {
     opacity: 0;
-    transform: scale(0.8);
+    transform: scale(0.85) rotate(-6deg);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotate(0);
   }
 }
 
 @keyframes app-error-fade-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -196,13 +289,43 @@
   }
 }
 
+@media (max-width: 420px) {
+  .app-error__actions {
+    flex-direction: column;
+  }
+
+  .app-error__btn--primary,
+  .app-error__btn--secondary {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Тёмная тема */
+body[data-theme='dark'] .app-error__mesh {
+  opacity: 0.75;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.18), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 40%, rgba(99, 102, 241, 0.1), transparent 50%),
+    radial-gradient(ellipse 50% 35% at 0% 85%, rgba(239, 68, 68, 0.1), transparent 45%);
+}
+
 body[data-theme='dark'] .app-error__card {
-  background: rgba(26, 35, 50, 0.9);
+  background: rgba(26, 35, 50, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 24px 64px rgba(0, 0, 0, 0.4),
-    0 0 48px rgba(239, 68, 68, 0.04);
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 24px 56px rgba(0, 0, 0, 0.45);
+}
+
+body[data-theme='dark'] .app-error__btn--primary {
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.35);
+}
+
+body[data-theme='dark'] .app-error__btn--primary:hover:not(:disabled) {
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.45);
 }
 
 body[data-theme='dark'] .app-error__btn--secondary {
@@ -213,5 +336,5 @@ body[data-theme='dark'] .app-error__btn--secondary {
 
 body[data-theme='dark'] .app-error__btn--secondary:hover {
   background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.16);
 }

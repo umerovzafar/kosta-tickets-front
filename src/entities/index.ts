@@ -10,7 +10,7 @@ export {
   getComments,
   addComment,
   updateComment,
-  deleteComment,
+  getAttachmentUrl,
 } from './ticket'
 export type { User } from './user'
 export { getMe } from './user'

@@ -7,6 +7,7 @@ import {
   buildPeriodSummary,
   getWeekMonday,
   getMonthDates,
+  isExpenseApprovedForCalendar,
 } from '../utils'
 
 export function useExpensesReports(
@@ -17,6 +18,7 @@ export function useExpensesReports(
   const expensesByDay = useMemo(() => {
     const byDay: Record<string, { total: number; count: number }> = {}
     for (const e of expenses) {
+      if (!isExpenseApprovedForCalendar(e)) continue
       if (!byDay[e.date]) byDay[e.date] = { total: 0, count: 0 }
       byDay[e.date].total += e.amount
       byDay[e.date].count += 1

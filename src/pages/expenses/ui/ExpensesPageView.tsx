@@ -1,24 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useCurrentUser } from '@shared/hooks'
 import { AnimatedLink } from '@shared/ui'
 import { Sidebar, IconMenu } from '@widgets/sidebar'
 import { routes } from '@shared/config'
 import { useExpenses } from '../model/ExpensesContext'
 import { toDateKey, buildDaySummary } from '../model/utils'
-import type { ExpenseCategory } from '../model/types'
+import type { ExpenseItem } from '../model/types'
 import { ExpensesDetailPanel } from './ExpensesDetailPanel'
 import { ExpenseFormModal } from './ExpenseFormModal'
-import { AllExpensesModal } from './AllExpensesModal'
-import { ExpensesContextMenu } from './ExpensesContextMenu'
+import { ExpenseItemDetailModal } from './ExpenseItemDetailModal'
+import { canViewExpensesRequestsAndReport } from '../model/expenseModeration'
 import './ExpensesPage.css'
-
-const IconLock = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </svg>
-)
 
 function formatFullDate(date: string | null) {
   if (!date) return 'Дата не выбрана'
@@ -32,9 +25,58 @@ function formatFullDate(date: string | null) {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+function ExpensesPageSkeleton() {
+  return (
+    <>
+      <section
+        className="exp-page__panel exp-page__panel--calendar exp-page__panel--calendar-main"
+        aria-busy="true"
+        aria-label="Загрузка календаря"
+      >
+        <div className="exp-page__calendar-header exp-page__skel-calendar-header">
+          <div className="exp-page__skel-pill exp-page__skel-pill--month" />
+          <div className="exp-page__skel-pill exp-page__skel-pill--selected" />
+          <div className="exp-page__skel-pill exp-page__skel-pill--legend" />
+        </div>
+        <div className="exp-page__weekdays">
+          {Array.from({ length: 7 }, (_, i) => (
+            <div key={i} className="exp-page__weekday exp-page__skel-weekday" aria-hidden />
+          ))}
+        </div>
+        <div className="exp-page__days">
+          {Array.from({ length: 42 }, (_, i) => (
+            <div
+              key={i}
+              className="exp-page__skel-day"
+              style={{ animationDelay: `${(i % 14) * 0.05}s` }}
+              aria-hidden
+            />
+          ))}
+        </div>
+      </section>
+      <aside className="exp-page__detail-panel" aria-busy="true" aria-label="Загрузка расходов за дату">
+        <div className="exp-detail-panel">
+          <div className="exp-detail-panel__head">
+            <div className="exp-page__skel-line exp-page__skel-line--title" />
+            <div className="exp-page__skel-line exp-page__skel-line--summary" />
+          </div>
+          <div className="exp-detail-panel__body exp-page__skel-detail-body">
+            <div className="exp-page__skel-line exp-page__skel-line--section" />
+            {Array.from({ length: 5 }, (_, i) => (
+              <div
+                key={i}
+                className="exp-page__skel-exp-card"
+                style={{ animationDelay: `${0.1 + i * 0.07}s` }}
+              />
+            ))}
+          </div>
+        </div>
+      </aside>
+    </>
+  )
+}
+
 export function ExpensesPageView() {
-  const navigate = useNavigate()
-  const handleBack = useCallback(() => navigate(routes.home), [navigate])
   const {
     isCollapsed,
     isMobileOpen,
@@ -58,29 +100,23 @@ export function ExpensesPageView() {
     editingExpense,
     addExpense,
     updateExpense,
-    EXPENSE_CATEGORIES,
     CATEGORY_META,
     WEEKDAYS_SHORT,
     formatAmount,
     dateRange,
-    setDateRange,
     isDateInRange,
-    dayComments,
-    setDayComment,
     expenses,
-    removeExpense,
+    expensesOfflineMode,
+    expensesApiError,
+    expensesApiLoading,
   } = useExpenses()
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; dateKey: string } | null>(null)
-  const [allExpensesModalOpen, setAllExpensesModalOpen] = useState(false)
+  const { user } = useCurrentUser()
+  const showExpensesMgmtLinks = canViewExpensesRequestsAndReport(user?.role)
 
-  useEffect(() => {
-    const handleClickOutside = () => setContextMenu(null)
-    if (contextMenu) {
-      document.addEventListener('click', handleClickOutside)
-      return () => document.removeEventListener('click', handleClickOutside)
-    }
-  }, [contextMenu])
+  const showExpensesSkeleton = !expensesOfflineMode && expensesApiLoading && !expensesApiError
+
+  const [detailExpense, setDetailExpense] = useState<ExpenseItem | null>(null)
 
   const selectedDayInfo = selectedDate ? expensesByDay[selectedDate] : null
   const selectedDateLabel = formatFullDate(selectedDate)
@@ -115,66 +151,15 @@ export function ExpensesPageView() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (isFormOpen) closeForm()
-        if (allExpensesModalOpen) setAllExpensesModalOpen(false)
-        setContextMenu(null)
-      }
-      if (e.key === 'n' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        if (selectedDate) openFormForDate(selectedDate)
+        setDetailExpense(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isFormOpen, closeForm, allExpensesModalOpen, selectedDate, openFormForDate])
-
-  const handleContextMenu = (e: React.MouseEvent, dateKey: string) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, dateKey })
-  }
-
-  const handleSelectPeriod = (dateKey: string) => {
-    if (!dateRange) {
-      setDateRange({ start: dateKey, end: dateKey })
-    } else {
-      const all = [dateRange.start, dateRange.end, dateKey].sort()
-      setDateRange({ start: all[0], end: all[all.length - 1] })
-    }
-    setContextMenu(null)
-  }
-
-  const handleAddExpense = (dateKey: string) => {
-    setSelectedDate(dateKey)
-    openFormForDate(dateKey)
-    setContextMenu(null)
-  }
-
-  const handleShowDetails = (dateKey: string) => {
-    setSelectedDate(dateKey)
-    setContextMenu(null)
-  }
-
-  const handleShowAllExpenses = () => {
-    setAllExpensesModalOpen(true)
-    setContextMenu(null)
-  }
-
-  const handleComment = (dateKey: string) => {
-    setSelectedDate(dateKey)
-    setContextMenu(null)
-  }
+  }, [isFormOpen, closeForm])
 
   return (
     <div className="exp-page">
-      <div className="exp-page__dev-overlay" role="status" aria-label="Вкладка ещё на разработке">
-        <div className="exp-page__dev-overlay-inner">
-          <span className="exp-page__dev-overlay-icon" aria-hidden><IconLock /></span>
-          <p className="exp-page__dev-overlay-text">Вкладка ещё на разработке</p>
-          <button type="button" className="exp-page__dev-overlay-back" onClick={handleBack}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-            Назад
-          </button>
-        </div>
-      </div>
       <div className="exp-page__sidebar-wrap">
         <Sidebar
           isCollapsed={isCollapsed}
@@ -196,9 +181,16 @@ export function ExpensesPageView() {
               <h1 className="exp-page__title">Расходы компании</h1>
             </div>
             <div className="exp-page__header-actions">
-              <AnimatedLink to={routes.expensesReport} className="exp-page__btn exp-page__btn--ghost">
-                Отчётность
-              </AnimatedLink>
+              {showExpensesMgmtLinks && (
+                <>
+                  <AnimatedLink to={routes.expensesRequests} className="exp-page__btn exp-page__btn--ghost">
+                    Заявки
+                  </AnimatedLink>
+                  <AnimatedLink to={routes.expensesReport} className="exp-page__btn exp-page__btn--ghost">
+                    Отчётность
+                  </AnimatedLink>
+                </>
+              )}
               <button type="button" className="exp-page__btn exp-page__btn--ghost" onClick={goToday} title="Перейти к сегодняшней дате">
                 Сегодня
               </button>
@@ -206,7 +198,7 @@ export function ExpensesPageView() {
                 type="button"
                 className="exp-page__btn exp-page__btn--primary"
                 onClick={() => selectedDate && openFormForDate(selectedDate)}
-                title="Добавить расход (Ctrl+N)"
+                title="Добавить расход за дату, выбранную в календаре"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -217,8 +209,23 @@ export function ExpensesPageView() {
           </div>
         </header>
 
+        {!expensesOfflineMode && expensesApiError && (
+          <div className="exp-page__api-banner exp-page__api-banner--error" role="alert">
+            {expensesApiError}
+          </div>
+        )}
+        {showExpensesSkeleton && (
+          <span className="exp-page__sr-only" aria-live="polite">
+            Загрузка расходов…
+          </span>
+        )}
+
         <div className="exp-page__content">
           <div className="exp-page__grid">
+            {showExpensesSkeleton ? (
+              <ExpensesPageSkeleton />
+            ) : (
+            <>
             <section className="exp-page__panel exp-page__panel--calendar exp-page__panel--calendar-main">
               <div className="exp-page__calendar-header">
                 <div className="exp-page__calendar-block exp-page__calendar-block--month">
@@ -266,10 +273,6 @@ export function ExpensesPageView() {
                       <span className="exp-page__legend-dot exp-page__legend-dot--expense" />
                       Есть расходы
                     </span>
-                    <span className="exp-page__legend-item" title="Клик по точке — просмотр комментария">
-                      <span className="exp-page__legend-dot exp-page__legend-dot--comment" />
-                      Комментарий
-                    </span>
                   </div>
                 </div>
               </div>
@@ -286,7 +289,6 @@ export function ExpensesPageView() {
                   const isToday = key === todayKey
                   const isSelected = key === selectedDate
                   const inRange = isDateInRange(key)
-                  const hasComment = !!dayComments[key]
                   const info = expensesByDay[key]
                   return (
                     <button
@@ -301,30 +303,9 @@ export function ExpensesPageView() {
                         info && info.count > 0 && 'exp-page__day--has-exp',
                       ].filter(Boolean).join(' ')}
                       onClick={() => setSelectedDate(key)}
-                      onContextMenu={(e) => handleContextMenu(e, key)}
-                      title={`${key} — левый клик: выбрать${hasComment ? ', по точке: комментарий' : ''}, правый: меню`}
+                      title={key}
                     >
                       <span className="exp-page__day-num">{d.getDate()}</span>
-                      {hasComment && (
-                        <span
-                          className="exp-page__day-comment-badge"
-                          title={dayComments[key]}
-                          role="button"
-                          tabIndex={0}
-                          aria-label="Посмотреть комментарий"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedDate(key)
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              setSelectedDate(key)
-                            }
-                          }}
-                        />
-                      )}
                       {info && info.count > 0 && (
                         <span className="exp-page__day-sum">
                           {formatAmount(info.total)}
@@ -336,83 +317,48 @@ export function ExpensesPageView() {
                 })}
               </div>
             </section>
-            <aside className="exp-page__detail-panel">
+            <aside className="exp-page__detail-panel" aria-label="Расходы по выбранной дате в календаре">
               <ExpensesDetailPanel
                 date={selectedDate ?? todayKey}
                 expenses={buildDaySummary(selectedDate ?? todayKey, expenses).expenses}
-                dayComment={dayComments[selectedDate ?? todayKey] ?? ''}
-                onCommentSave={(comment) => setDayComment(selectedDate ?? todayKey, comment)}
-                onAdd={() => openFormForDate(selectedDate ?? todayKey)}
+                onViewDetails={setDetailExpense}
                 onEdit={openFormForEdit}
-                onRemove={removeExpense}
                 formatAmount={formatAmount}
                 CATEGORY_META={CATEGORY_META}
               />
             </aside>
+            </>
+            )}
           </div>
         </div>
       </main>
+
+      {detailExpense && typeof document !== 'undefined' && createPortal(
+        <ExpenseItemDetailModal
+          expense={detailExpense}
+          formatAmount={formatAmount}
+          onClose={() => setDetailExpense(null)}
+          onEdit={() => {
+            openFormForEdit(detailExpense)
+            setDetailExpense(null)
+          }}
+        />,
+        document.body,
+      )}
 
       {isFormOpen && formDate && typeof document !== 'undefined' && createPortal(
         <ExpenseFormModal
           date={formDate}
           initialExpense={editingExpense}
           onClose={closeForm}
-          onSave={(data) => {
-            if (editingExpense) {
-              updateExpense(editingExpense.id, {
-                category: data.category as ExpenseCategory,
-                amount: data.amount,
-                description: data.description,
-                title: data.title,
-                receiptPhoto: data.receiptPhoto,
-              })
-            } else {
-              addExpense({
-                date: formDate,
-                currency: 'UZS',
-                category: data.category as ExpenseCategory,
-                amount: data.amount,
-                description: data.description,
-                title: data.title,
-                receiptPhoto: data.receiptPhoto,
-              })
-            }
-            closeForm()
+          onSaveExpense={(item) => {
+            addExpense(item)
           }}
-          categories={EXPENSE_CATEGORIES}
-          categoryMeta={CATEGORY_META}
+          onUpdateExpense={updateExpense}
         />,
         document.body
       )}
 
-      {contextMenu && typeof document !== 'undefined' && createPortal(
-        <ExpensesContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          dateKey={contextMenu.dateKey}
-          dateRange={dateRange}
-          hasComment={!!dayComments[contextMenu.dateKey]}
-          onAddExpense={handleAddExpense}
-          onShowDetails={handleShowDetails}
-          onShowAllExpenses={handleShowAllExpenses}
-          onComment={handleComment}
-          onSelectPeriod={handleSelectPeriod}
-          onResetPeriod={() => { setDateRange(null); setContextMenu(null) }}
-        />,
-        document.body
-      )}
-
-      {allExpensesModalOpen && typeof document !== 'undefined' && createPortal(
-        <AllExpensesModal
-          expenses={expenses}
-          onClose={() => setAllExpensesModalOpen(false)}
-          onRemove={removeExpense}
-          formatAmount={formatAmount}
-          CATEGORY_META={CATEGORY_META}
-        />,
-        document.body
-      )}
     </div>
   )
 }

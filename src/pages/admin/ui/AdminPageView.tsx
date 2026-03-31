@@ -3,9 +3,7 @@ import { Sidebar, IconMenu } from '@widgets/sidebar'
 import { useAdmin } from '../model/AdminContext'
 import { AdminKPISection } from './AdminKPISection'
 import { AdminUsersSection } from './AdminUsersSection'
-import { TicketsSection } from './TicketsSection'
 import { LateSection } from './LateSection'
-import { TicketDetailsModal } from './TicketDetailsModal'
 import './AdminPage.css'
 
 export function AdminPageView() {
@@ -20,25 +18,6 @@ export function AdminPageView() {
     loading,
     error,
     loadUsers,
-    ticketsLoading,
-    ticketsError,
-    ticketSearch,
-    setTicketSearch,
-    ticketStatusFilter,
-    setTicketStatusFilter,
-    ticketPriorityFilter,
-    setTicketPriorityFilter,
-    includeArchivedTickets,
-    setIncludeArchivedTickets,
-    statusOptions,
-    priorityOptions,
-    filteredTickets,
-    loadTickets,
-    ticketDetails,
-    ticketDetailsLoading,
-    ticketDetailsError,
-    openTicketDetails,
-    closeTicketDetails,
     lateLoading,
     lateError,
     lateMetrics,
@@ -111,23 +90,6 @@ export function AdminPageView() {
           </div>
 
           <div className="ap__bottom-grid">
-            <TicketsSection
-              tickets={filteredTickets}
-              ticketsLoading={ticketsLoading}
-              ticketsError={ticketsError}
-              ticketSearch={ticketSearch}
-              setTicketSearch={setTicketSearch}
-              ticketStatusFilter={ticketStatusFilter}
-              setTicketStatusFilter={setTicketStatusFilter}
-              ticketPriorityFilter={ticketPriorityFilter}
-              setTicketPriorityFilter={setTicketPriorityFilter}
-              includeArchivedTickets={includeArchivedTickets}
-              setIncludeArchivedTickets={setIncludeArchivedTickets}
-              statusOptions={statusOptions}
-              priorityOptions={priorityOptions}
-              loadTickets={loadTickets}
-              openTicketDetails={openTicketDetails}
-            />
             <LateSection
               lateLoading={lateLoading}
               lateError={lateError}
@@ -138,14 +100,6 @@ export function AdminPageView() {
         </div>
       </main>
 
-      {ticketDetails && (
-        <TicketDetailsModal
-          ticket={ticketDetails}
-          loading={ticketDetailsLoading}
-          error={ticketDetailsError}
-          onClose={closeTicketDetails}
-        />
-      )}
     </div>
   )
 }

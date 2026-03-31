@@ -2,6 +2,9 @@ import { getAccessToken } from '@shared/lib'
 
 const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:1234'
 
+/** Единое сообщение: календарь недоступен или не связан с аккаунтом (сброс состояния во UI). */
+export const CALENDAR_NOT_CONNECTED_MSG = 'Календарь не подключён'
+
 export interface CalendarEvent {
   id: string
   subject?: string
@@ -20,10 +23,9 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${getToken()}` }
 }
 
-async function extractErrorDetail(res: Response): Promise<string | null> {
+async function parseBody(res: Response): Promise<Record<string, unknown> | null> {
   try {
-    const data = await res.json()
-    return data?.detail ?? null
+    return await res.json()
   } catch {
     return null
   }
@@ -37,6 +39,7 @@ export async function connectOutlookCalendar(): Promise<void> {
     credentials: 'include',
   })
 
+  // Server-side redirect — follow Location header directly
   if (res.status === 302 || res.status === 307) {
     const url = res.headers.get('Location')
     if (url) {
@@ -45,35 +48,40 @@ export async function connectOutlookCalendar(): Promise<void> {
     }
   }
 
+  // Opaque redirect (CORS manual mode) — Location header not accessible,
+  // fall through to body parsing below
   if (res.type === 'opaqueredirect') {
-    const url = res.headers.get('Location')
-    if (url) {
-      window.location.href = url
-      return
-    }
-  }
-
-  if (res.ok) {
-    const data = await res.json().catch(() => null)
-    if (data?.url) {
-      window.location.href = data.url
-      return
-    }
+    window.location.href = `${GATEWAY_BASE}/api/v1/todos/calendar/connect`
+    return
   }
 
   if (res.status === 401) throw new Error('Требуется авторизация')
 
+  // Always try to parse the body — the backend may return an auth URL
+  // inside the JSON body regardless of the HTTP status code
+  const data = await parseBody(res)
+
+  if (data?.url && typeof data.url === 'string') {
+    window.location.href = data.url
+    return
+  }
+
+  if (res.ok) return
+
+  const detail = typeof data?.detail === 'string' ? data.detail : null
+
   if (res.status === 503) {
-    const detail = await extractErrorDetail(res)
-    throw new Error(detail ?? 'Сервис календаря недоступен. Проверьте настройки backend (MICROSOFT_CLIENT_ID, AUTH_SERVICE_URL).')
+    throw new Error(
+      detail
+        ?? 'Сервис календаря не настроен на сервере (OAuth Microsoft). Нужны MICROSOFT_CLIENT_ID и MICROSOFT_REDIRECT_URI в сервисе todos.',
+    )
   }
 
   if (res.status === 500) {
-    const detail = await extractErrorDetail(res)
     throw new Error(detail ?? 'Внутренняя ошибка сервера. Проверьте логи контейнера todos.')
   }
 
-  throw new Error('Не удалось начать подключение календаря')
+  throw new Error(detail ?? 'Не удалось начать подключение календаря')
 }
 
 export async function getCalendarStatus(): Promise<{ connected: boolean }> {
@@ -100,9 +108,16 @@ export async function getCalendarEvents(
     credentials: 'include',
   })
   if (res.status === 401) throw new Error('Требуется авторизация')
-  if (res.status === 403) throw new Error('Календарь не подключён')
+  if (res.status === 503) {
+    throw new Error(CALENDAR_NOT_CONNECTED_MSG)
+  }
+  if (res.status === 403) {
+    await parseBody(res)
+    throw new Error(CALENDAR_NOT_CONNECTED_MSG)
+  }
   if (!res.ok) {
-    const detail = await extractErrorDetail(res)
+    const body = await parseBody(res)
+    const detail = typeof body?.detail === 'string' ? body.detail : null
     throw new Error(detail ?? `Ошибка загрузки событий (${res.status})`)
   }
 
@@ -133,7 +148,7 @@ export async function createCalendarEvent(payload: {
     body: JSON.stringify(payload),
   })
   if (res.status === 401) throw new Error('Требуется авторизация')
-  if (res.status === 403) throw new Error('Календарь не подключён')
+  if (res.status === 403) throw new Error(CALENDAR_NOT_CONNECTED_MSG)
   if (!res.ok) throw new Error('Ошибка создания события')
   return res.json()
 }

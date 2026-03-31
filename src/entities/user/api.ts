@@ -121,6 +121,29 @@ export async function setUserPosition(userId: number, position: string | null): 
   return res.json()
 }
 
+export async function uploadDesktopBackground(file: File): Promise<User> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await apiFetch('/api/v1/users/me/desktop-background', {
+    method: 'POST',
+    body: formData,
+  })
+  if (res.status === 400) throw new Error('Неверный формат или размер файла (максимум 5 МБ, форматы: jpg, png, gif, webp)')
+  if (res.status === 401) throw new Error('Не авторизован')
+  if (!res.ok) throw new Error('Не удалось загрузить фон')
+  return res.json()
+}
+
+export async function deleteDesktopBackground(): Promise<User> {
+  const res = await apiFetch('/api/v1/users/me/desktop-background', {
+    method: 'DELETE',
+  })
+  if (res.status === 401) throw new Error('Не авторизован')
+  if (!res.ok) throw new Error('Не удалось удалить фон')
+  return res.json()
+}
+
+
 export async function getMicrosoftUsers(): Promise<MicrosoftUser[]> {
   const res = await apiFetch('/api/v1/users/microsoft')
 

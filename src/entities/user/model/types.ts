@@ -11,6 +11,7 @@ export type User = {
   time_tracking_role: 'user' | 'manager' | null
   created_at: string
   updated_at: string | null
+  desktop_background: string | null
 }
 
 export type MicrosoftUser = {

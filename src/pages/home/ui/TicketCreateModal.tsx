@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { createPortal } from 'react-dom'
 import type { PriorityItem } from '@entities/ticket'
 
 type TicketCreateModalProps = {
@@ -60,7 +61,7 @@ export const TicketCreateModal = memo(function TicketCreateModal(props: TicketCr
     error,
   } = props
 
-  return (
+  const modal = (
     <div className="tm" role="dialog" aria-modal="true" aria-labelledby="tm-title">
       <div className="tm__backdrop" onClick={onClose} role="button" tabIndex={-1} aria-label="Закрыть" />
       <div className="tm__box" onClick={(e) => e.stopPropagation()}>
@@ -163,4 +164,6 @@ export const TicketCreateModal = memo(function TicketCreateModal(props: TicketCr
       </div>
     </div>
   )
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : null
 })

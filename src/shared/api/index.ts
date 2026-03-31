@@ -1,1 +1,7 @@
-export { apiFetch, getApiUrl } from './client'
+export {
+  apiFetch,
+  getApiUrl,
+  fetchMediaBlob,
+  getMediaPathFromMediaUrl,
+  createAuthenticatedMediaBlobUrl,
+} from './client'

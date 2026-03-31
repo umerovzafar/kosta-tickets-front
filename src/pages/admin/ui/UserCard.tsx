@@ -106,19 +106,19 @@ export function UserCard({
   return (
     <article className={`ap__user-card ap__user-card--${statusKey} ${statusKey !== 'active' ? 'ap__user-card--dim' : ''}`}>
       <div className="ap__user-card-header">
-        <span className="ap__user-avatar">{(u.display_name || 'U').charAt(0).toUpperCase()}</span>
+        <span className="ap__user-avatar" style={{ width: 'var(--user-card-avatar-size)', height: 'var(--user-card-avatar-size)', fontSize: 'var(--user-card-avatar-font-size)' }}>{(u.display_name || 'U').charAt(0).toUpperCase()}</span>
         <div className="ap__user-card-header-text">
           <div className="ap__user-card-name-row">
-            <span className="ap__user-name">{u.display_name || '—'}</span>
+            <span className="ap__user-name" style={{ fontWeight: 'var(--user-card-name-font-weight)', fontSize: 'var(--user-card-name-font-size)' }}>{u.display_name || '—'}</span>
             <span className={`ap__status-badge ap__status-badge--${statusKey}`}>{statusLabel}</span>
           </div>
-          <a href={`mailto:${u.email}`} className="ap__user-card-email">{u.email}</a>
+          <a href={`mailto:${u.email}`} className="ap__user-card-email" style={{ fontSize: 'var(--user-card-email-font-size)', color: 'var(--user-card-email-color)' }}>{u.email}</a>
         </div>
       </div>
-      <div className="ap__user-card-body">
-        <div className="ap__user-card-section">
-          <div className="ap__user-card-row">
-            <span className="ap__user-card-lbl">Роль</span>
+      <div className="ap__user-card-body" style={{ gap: 'var(--user-card-body-gap)' }}>
+        <div className="ap__user-card-section" style={{ gap: 'var(--user-card-section-gap)' }}>
+          <div className="ap__user-card-row" style={{ fontSize: 'var(--user-card-row-font-size)' }}>
+            <span className="ap__user-card-lbl" style={{ fontSize: 'var(--user-card-lbl-font-size)', fontWeight: 'var(--user-card-lbl-font-weight)', color: 'var(--user-card-lbl-color)' }}>Роль</span>
             <div className="ap__role-dd" ref={openRoleDropdown === u.id ? roleDropdownRef : undefined}>
             <button
               type="button"
@@ -158,8 +158,8 @@ export function UserCard({
             )}
             </div>
           </div>
-          <div className="ap__user-card-row">
-            <span className="ap__user-card-lbl">Учёт времени</span>
+          <div className="ap__user-card-row" style={{ fontSize: 'var(--user-card-row-font-size)' }}>
+            <span className="ap__user-card-lbl" style={{ fontSize: 'var(--user-card-lbl-font-size)', fontWeight: 'var(--user-card-lbl-font-weight)', color: 'var(--user-card-lbl-color)' }}>Учёт времени</span>
             <div className="ap__role-dd" ref={openTTDropdown === u.id ? ttDropdownRef : undefined}>
             <button
               type="button"
@@ -198,8 +198,8 @@ export function UserCard({
             )}
             </div>
           </div>
-          <div className="ap__user-card-row">
-            <span className="ap__user-card-lbl">Должность</span>
+          <div className="ap__user-card-row" style={{ fontSize: 'var(--user-card-row-font-size)' }}>
+            <span className="ap__user-card-lbl" style={{ fontSize: 'var(--user-card-lbl-font-size)', fontWeight: 'var(--user-card-lbl-font-weight)', color: 'var(--user-card-lbl-color)' }}>Должность</span>
             <div className="ap__role-dd" ref={openPosDropdown === u.id ? posDropdownRef : undefined}>
             <button
               type="button"
@@ -250,7 +250,7 @@ export function UserCard({
             </div>
           </div>
         </div>
-        <div className="ap__user-card-meta">
+        <div className="ap__user-card-meta" style={{ fontSize: 'var(--user-card-meta-font-size)', color: 'var(--user-card-meta-color)' }}>
           <span title="Создан">{formatDateOnly(u.created_at)}</span>
           <span className="ap__user-card-meta-sep">·</span>
           <span title="Обновлён">{u.updated_at ? formatDateOnly(u.updated_at) : '—'}</span>

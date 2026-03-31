@@ -1,6 +1,13 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react'
-import { getWorkdaySettings } from '@shared/lib/attendanceSettings'
-import { defaultFrom, defaultTo, TYPE_OPTIONS } from './constants'
+import {
+  fetchWorkdaySettings,
+  patchWorkdaySettings,
+  workdayDtoToSettings,
+  settingsToWorkdayDto,
+} from '@entities/attendance'
+import type { WorkdaySettings } from '@shared/lib/attendanceSettings'
+import { DEFAULT_WORKDAY_SETTINGS } from '@shared/lib/attendanceSettings'
+import { defaultFrom, defaultTo } from './constants'
 import type { AttendanceContextValue } from './AttendanceContext.types'
 import { useAttendanceData } from './hooks/useAttendanceData'
 import { exportAttendanceToCsv } from './lib/exportExcel'
@@ -31,10 +38,50 @@ export function AttendanceProvider({
   const [dateTo, setDateTo] = useState(() => defaultTo())
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [settings, setSettings] = useState(() => getWorkdaySettings())
+  const [settings, setSettings] = useState<typeof DEFAULT_WORKDAY_SETTINGS>(DEFAULT_WORKDAY_SETTINGS)
+  const [settingsLoading, setSettingsLoading] = useState(true)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   const data = useAttendanceData(dateFrom, dateTo, search, typeFilter, settings)
+
+  useEffect(() => {
+    let cancelled = false
+    setSettingsLoading(true)
+    setSettingsError(null)
+    fetchWorkdaySettings()
+      .then((dto) => {
+        if (!cancelled) setSettings(workdayDtoToSettings(dto))
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setSettingsError(e instanceof Error ? e.message : 'Не удалось загрузить настройки')
+          setSettings(DEFAULT_WORKDAY_SETTINGS)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const saveWorkdaySettings = useCallback(
+    async (value: WorkdaySettings) => {
+      const dto = await patchWorkdaySettings(settingsToWorkdayDto(value))
+      setSettings(workdayDtoToSettings(dto))
+      setSettingsError(null)
+      await data.load()
+    },
+    [data.load],
+  )
+
+  const singleDaySelected = Boolean(dateFrom && dateTo && dateFrom === dateTo)
+  useEffect(() => {
+    if (singleDaySelected && typeFilter === 'overtime') setTypeFilter('')
+    if (!singleDaySelected && (typeFilter === 'present_on_time' || typeFilter === 'absent')) setTypeFilter('')
+  }, [singleDaySelected, typeFilter])
 
   useEffect(() => {
     if (!isMobile) return
@@ -82,7 +129,9 @@ export function AttendanceProvider({
       typeFilter,
       setTypeFilter,
       settings,
-      setSettings,
+      settingsLoading,
+      settingsError,
+      saveWorkdaySettings,
       isSettingsOpen,
       setIsSettingsOpen,
       records: data.records,
@@ -95,7 +144,8 @@ export function AttendanceProvider({
       showTable: data.showTable,
       handleReset,
       handleExportExcel,
-      TYPE_OPTIONS,
+      typeFilterOptions: data.typeFilterOptions,
+      isDailyMode: data.isDailyMode,
     }),
     [
       isCollapsed,
@@ -107,10 +157,15 @@ export function AttendanceProvider({
       search,
       typeFilter,
       settings,
+      settingsLoading,
+      settingsError,
+      saveWorkdaySettings,
       isSettingsOpen,
       data,
       handleReset,
       handleExportExcel,
+      data.typeFilterOptions,
+      data.isDailyMode,
     ],
   )
 

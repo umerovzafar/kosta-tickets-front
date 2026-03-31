@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Sidebar, IconMenu } from '@widgets/sidebar'
 import { useInventory } from '../model'
@@ -22,6 +23,8 @@ export function InventoryPageView() {
     loadingItems,
     loadItems,
   } = useInventory()
+
+  const [inventoryTab, setInventoryTab] = useState<'positions' | 'categories'>('positions')
 
   const sidebarWrap = (
     <div className={`inv__sidebar-wrap${isCollapsed ? ' inv__sidebar-wrap--collapsed' : ''}`}>
@@ -85,8 +88,44 @@ export function InventoryPageView() {
           )}
 
           <InventoryKPISection />
-          <InventoryCategoriesSection />
-          <InventoryItemsSection />
+
+          <div className="inv__tabs-wrap" role="tablist" aria-label="Разделы инвентаризации">
+            <button
+              type="button"
+              role="tab"
+              id="inv-tab-positions"
+              aria-selected={inventoryTab === 'positions'}
+              aria-controls="inv-panel-positions"
+              tabIndex={inventoryTab === 'positions' ? 0 : -1}
+              className={`inv__tab${inventoryTab === 'positions' ? ' inv__tab--active' : ''}`}
+              onClick={() => setInventoryTab('positions')}
+            >
+              Позиции
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="inv-tab-categories"
+              aria-selected={inventoryTab === 'categories'}
+              aria-controls="inv-panel-categories"
+              tabIndex={inventoryTab === 'categories' ? 0 : -1}
+              className={`inv__tab${inventoryTab === 'categories' ? ' inv__tab--active' : ''}`}
+              onClick={() => setInventoryTab('categories')}
+            >
+              Категории
+            </button>
+          </div>
+
+          {inventoryTab === 'positions' && (
+            <div id="inv-panel-positions" role="tabpanel" aria-labelledby="inv-tab-positions" className="inv__tab-panel">
+              <InventoryItemsSection />
+            </div>
+          )}
+          {inventoryTab === 'categories' && (
+            <div id="inv-panel-categories" role="tabpanel" aria-labelledby="inv-tab-categories" className="inv__tab-panel">
+              <InventoryCategoriesSection />
+            </div>
+          )}
         </div>
       </main>
 

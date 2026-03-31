@@ -1,1 +1,1 @@
-export { loadExpensesFromStorage, saveExpensesToStorage, loadCommentsFromStorage, saveCommentsToStorage } from './storage'
+export { loadExpensesFromStorage, saveExpensesToStorage } from './storage'

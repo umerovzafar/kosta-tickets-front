@@ -10,26 +10,21 @@ import {
   getTicket,
   getComments,
   addComment,
+  addCommentWs,
+  subscribeTicketsWsPush,
+  connectTicketsWsWhenReady,
   getStatuses,
+  getPriorities,
   updateTicket,
+  getAttachmentUrl,
   type Ticket,
   type Comment,
   type StatusItem,
+  type PriorityItem,
 } from '@entities/ticket'
 import { getUser, type User } from '@entities/user'
 import { formatDateInfo } from '@shared/lib/formatDate'
 import './TicketDetailPage.css'
-
-function getAttachmentRequestPath(attachmentPath: string): string {
-  if (attachmentPath.startsWith('http')) {
-    try {
-      return new URL(attachmentPath).pathname
-    } catch {
-      return attachmentPath
-    }
-  }
-  return attachmentPath.startsWith('/') ? attachmentPath : `/${attachmentPath}`
-}
 
 const IconBack = memo(function IconBack() {
   return (
@@ -117,20 +112,19 @@ function canViewCreator(role: string | undefined): boolean {
   return r === 'администратор' || r.includes('it')
 }
 
+/** API: open, in_progress, closed */
 function getStatusColor(status: string): string {
   const s = status?.toLowerCase() || ''
-  if (s.includes('закрыт')) return 'closed'
-  if (s.includes('в работе')) return 'progress'
-  if (s.includes('согласован')) return 'approval'
-  if (s.includes('невозможно')) return 'impossible'
+  if (s === 'closed') return 'closed'
+  if (s === 'in_progress') return 'progress'
   return 'open'
 }
 
+/** API: low, medium, high */
 function getPriorityColor(priority: string): string {
   const p = priority?.toLowerCase() || ''
-  if (p.includes('высокий') || p.includes('критический')) return 'high'
-  if (p.includes('средний')) return 'medium'
-  if (p.includes('низкий')) return 'low'
+  if (p === 'high') return 'high'
+  if (p === 'low') return 'low'
   return 'medium'
 }
 
@@ -148,6 +142,7 @@ export function TicketDetailPage() {
   const [creator, setCreator] = useState<User | null>(null)
   const [creatorLoading, setCreatorLoading] = useState(false)
   const [statuses, setStatuses] = useState<StatusItem[]>([])
+  const [priorities, setPriorities] = useState<PriorityItem[]>([])
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -176,9 +171,32 @@ export function TicketDetailPage() {
   useEffect(() => { loadData() }, [loadData])
 
   useEffect(() => {
-    if (!canChangeStatus) return
+    if (!currentUser) return
+    connectTicketsWsWhenReady().catch(() => {})
+  }, [currentUser])
+
+  /* Push: ticket_uuid + event — перезагрузка карточки/комментариев через REST (TICKETS_FRONTEND.md). */
+  useEffect(() => {
+    if (!uuid) return
+    const off = subscribeTicketsWsPush((msg) => {
+      const ticketU = typeof msg.ticket_uuid === 'string' ? msg.ticket_uuid : ''
+      if (ticketU !== uuid) return
+      const ev = typeof msg.event === 'string' ? msg.event : ''
+
+      if (ev === 'ticket_created' || ev === 'ticket_updated' || ev === 'ticket_archived') {
+        getTicket(uuid).then(setTicket).catch(() => {})
+      }
+      if (ev.startsWith('comment_')) {
+        getComments(uuid).then(setComments).catch(() => {})
+      }
+    })
+    return off
+  }, [uuid])
+
+  useEffect(() => {
     getStatuses().then(setStatuses).catch(() => setStatuses([]))
-  }, [canChangeStatus])
+    getPriorities().then(setPriorities).catch(() => setPriorities([]))
+  }, [])
 
   useEffect(() => {
     if (!statusDropdownOpen) return
@@ -239,9 +257,15 @@ export function TicketDetailPage() {
     if (!uuid || !commentText.trim() || commentSubmitting) return
     setCommentSubmitting(true)
     setCommentError(null)
+    const text = commentText.trim()
     try {
-      const newComment = await addComment(uuid, commentText.trim())
-      setComments((prev) => [...prev, newComment])
+      let newComment: Comment
+      try {
+        newComment = await addCommentWs(uuid, text)
+      } catch {
+        newComment = await addComment(uuid, text)
+      }
+      setComments((prev) => (prev.some((x) => x.id === newComment.id) ? prev : [...prev, newComment]))
       setCommentText('')
     } catch (err) {
       setCommentError(err instanceof Error ? err.message : 'Не удалось отправить комментарий')
@@ -251,15 +275,15 @@ export function TicketDetailPage() {
   }
 
   const openAttachment = useCallback(async (attachmentPath: string) => {
-    const path = getAttachmentRequestPath(attachmentPath)
+    const url = getAttachmentUrl(attachmentPath)
     setAttachmentLoading(true)
     try {
-      const res = await apiFetch(path)
+      const res = await apiFetch(url)
       if (!res.ok) throw new Error('Не удалось загрузить файл')
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      window.open(url, '_blank', 'noopener')
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      const objectUrl = URL.createObjectURL(blob)
+      window.open(objectUrl, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Не удалось открыть файл')
     } finally {
@@ -376,7 +400,7 @@ export function TicketDetailPage() {
             <div className="td__header-chips">
               <span className={`td__chip td__chip--priority-${priorityColor}`}>
                 <IconFlag />
-                {ticket.priority}
+                {priorities.find((p) => p.value === ticket.priority)?.label ?? ticket.priority}
               </span>
               <span className="td__chip td__chip--category">
                 <IconFolder />
@@ -532,7 +556,9 @@ export function TicketDetailPage() {
 
                 <div className="td__info-block">
                   <span className="td__info-label"><IconFlag /> Приоритет</span>
-                  <span className={`td__info-badge td__info-badge--priority-${priorityColor}`}>{ticket.priority}</span>
+                  <span className={`td__info-badge td__info-badge--priority-${priorityColor}`}>
+                    {priorities.find((p) => p.value === ticket.priority)?.label ?? ticket.priority}
+                  </span>
                 </div>
 
                 <div className="td__info-block">

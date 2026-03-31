@@ -1,17 +1,57 @@
+import type { StatusItem } from '@entities/ticket'
+
+/** Группировка для плиток статистики на главной (учитывает value и label из API) */
+export function ticketStatusBucketForStats(
+  ticketStatus: string,
+  statuses: StatusItem[],
+): 'closed' | 'inProgress' | 'impossible' | 'open' {
+  const raw = (ticketStatus ?? '').trim()
+  const v = raw.toLowerCase()
+
+  const meta = statuses.find((s) => s.value === raw)
+  const label = (meta?.label ?? '').toLowerCase()
+  const text = `${v} ${label}`.trim()
+
+  const impossibleRx = /невозмож|impossible|отклон|отказ|reject|cancel/i
+  const inProgressRx = /в\s*работе|прогресс|in_progress|in-progress|progress|выполня|pending/i
+  const closedRx = /закрыт|closed|resolved|done|заверш|выполнен/i
+  const notClosedRx = /не\s*закрыт/i
+
+  if (impossibleRx.test(label) || (v && impossibleRx.test(v))) return 'impossible'
+  if (
+    inProgressRx.test(label) ||
+    inProgressRx.test(v) ||
+    v === 'in_progress' ||
+    /in_progress|in-progress/.test(v)
+  ) {
+    return 'inProgress'
+  }
+  if (label && closedRx.test(label) && !notClosedRx.test(label)) return 'closed'
+  if (closedRx.test(v) && v !== 'open') return 'closed'
+  if (v === 'closed') return 'closed'
+
+  if (inProgressRx.test(text) && !impossibleRx.test(text)) return 'inProgress'
+  if (closedRx.test(text) && !notClosedRx.test(text) && !inProgressRx.test(label)) return 'closed'
+  if (impossibleRx.test(text)) return 'impossible'
+
+  return 'open'
+}
+
+/** API: low, medium, high */
 export function getPriorityTagClass(priority: string): string {
   const p = priority?.toLowerCase() || ''
-  if (p.includes('высокий') || p.includes('критический')) return 'home-tickets__priority--high'
-  if (p.includes('средний')) return 'home-tickets__priority--medium'
-  if (p.includes('низкий')) return 'home-tickets__priority--low'
+  if (p === 'high') return 'home-tickets__priority--high'
+  if (p === 'low') return 'home-tickets__priority--low'
   return 'home-tickets__priority--medium'
 }
 
+/** Соответствует классам строк/иконок в таблице заявок */
 export function getStatusTagClass(status: string): string {
   const s = status?.toLowerCase() || ''
-  if (s.includes('закрыт')) return 'closed'
-  if (s.includes('в работе')) return 'in-progress'
-  if (s.includes('согласован')) return 'approval'
-  if (s.includes('невозможно')) return 'impossible'
+  if (s === 'closed') return 'closed'
+  if (s === 'in_progress') return 'in-progress'
+  if (s === 'impossible' || s.includes('impossible')) return 'impossible'
+  if (s === 'approval' || s.includes('approval') || s.includes('соглас')) return 'approval'
   return 'open'
 }
 

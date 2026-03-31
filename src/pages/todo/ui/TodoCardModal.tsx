@@ -1,11 +1,10 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useId } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconCheck,
   IconChevronDown,
   IconClose,
   IconComment,
-  IconMinimize,
   IconMore,
   IconPaperclip,
   IconPlus,
@@ -34,15 +33,34 @@ export const TodoCardModal = memo(function TodoCardModal({
   onCardUpdate,
   onArchive,
 }: TodoCardModalProps) {
+  const titleId = useId()
   const [descFocused, setDescFocused] = useState(false)
+  const [titleEditing, setTitleEditing] = useState(false)
+  const [titleValue, setTitleValue] = useState(card.title)
+  const [commentText, setCommentText] = useState('')
   const [activePanel, setActivePanel] = useState<PanelType>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
+  const titleInputRef = useRef<HTMLTextAreaElement>(null)
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({})
 
   const togglePanel = useCallback((p: PanelType) => {
     setActivePanel((prev) => (prev === p ? null : p))
   }, [])
+
+  const commitTitle = useCallback(() => {
+    const trimmed = titleValue.trim()
+    if (trimmed && trimmed !== card.title) onCardUpdate({ title: trimmed })
+    else setTitleValue(card.title)
+    setTitleEditing(false)
+  }, [titleValue, card.title, onCardUpdate])
+
+  useEffect(() => {
+    if (titleEditing && titleInputRef.current) {
+      titleInputRef.current.focus()
+      titleInputRef.current.select()
+    }
+  }, [titleEditing])
 
   useLayoutEffect(() => {
     if (!activePanel || !toolbarRef.current) return
@@ -54,7 +72,24 @@ export const TodoCardModal = memo(function TodoCardModal({
       const names = ['--todo-accent', '--todo-text', '--todo-muted', '--todo-surface', '--todo-surface2', '--todo-panel-bg', '--todo-border', '--todo-shadow']
       names.forEach((n) => { vars[n] = cs.getPropertyValue(n).trim() })
     }
-    setPanelStyle({ top: rect.bottom + 6, left: rect.left, ...vars } as React.CSSProperties)
+
+    const applyPosition = () => {
+      let top = rect.bottom + 6
+      const left = rect.left
+      const pad = 10
+      const panelEl = panelRef.current
+      if (panelEl) {
+        const h = panelEl.getBoundingClientRect().height
+        const vh = window.innerHeight
+        const maxTop = Math.max(pad, vh - h - pad)
+        if (top > maxTop) top = maxTop
+      }
+      setPanelStyle({ top, left, ...vars } as React.CSSProperties)
+    }
+
+    applyPosition()
+    const id = requestAnimationFrame(applyPosition)
+    return () => cancelAnimationFrame(id)
   }, [activePanel])
 
   useEffect(() => {
@@ -70,24 +105,27 @@ export const TodoCardModal = memo(function TodoCardModal({
   }, [activePanel])
 
   return (
-    <div className="tcm-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="tcm-title">
+    <div className="tcm-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="tcm" onClick={(e) => e.stopPropagation()}>
 
         <header className="tcm__header">
-          <button type="button" className="tcm__list-btn" aria-haspopup="listbox">
-            <span>{columnTitle}</span>
-            <IconChevronDown />
-          </button>
+          <div className="tcm__header-left">
+            <button type="button" className="tcm__list-btn" aria-haspopup="listbox">
+              <span>{columnTitle}</span>
+              <IconChevronDown />
+            </button>
+          </div>
           <div className="tcm__header-actions">
             <button type="button" className="tcm__icon-btn" aria-label="Вложения"><IconPaperclip /></button>
             <button type="button" className="tcm__icon-btn" aria-label="Ещё"><IconMore /></button>
-            <button type="button" className="tcm__icon-btn" aria-label="Свернуть"><IconMinimize /></button>
+            <div className="tcm__header-divider" />
             <button type="button" className="tcm__icon-btn tcm__icon-btn--close" aria-label="Закрыть" onClick={onClose}><IconClose /></button>
           </div>
         </header>
 
         <div className="tcm__body">
           <div className="tcm__main">
+
             <div className="tcm__title-row">
               <button
                 type="button"
@@ -98,41 +136,58 @@ export const TodoCardModal = memo(function TodoCardModal({
               >
                 {card.completed && <IconCheck />}
               </button>
-              <h2 id="tcm-title" className="tcm__title">{card.title}</h2>
+              {titleEditing ? (
+                <textarea
+                  ref={titleInputRef}
+                  id={titleId}
+                  className="tcm__title-input"
+                  value={titleValue}
+                  onChange={(e) => setTitleValue(e.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitTitle() }
+                    if (e.key === 'Escape') { setTitleValue(card.title); setTitleEditing(false) }
+                  }}
+                  rows={2}
+                />
+              ) : (
+                <h2
+                  id={titleId}
+                  className={`tcm__title${card.completed ? ' tcm__title--done' : ''}`}
+                  onClick={() => setTitleEditing(true)}
+                  title="Нажмите для редактирования"
+                >
+                  {card.title}
+                </h2>
+              )}
             </div>
 
-            {(card.labels?.length ?? 0) > 0 && (
-              <div className="tcm__labels-row">
-                {card.labels!.map((l) => (
+            {((card.labels?.length ?? 0) > 0 || card.dueDate || card.startDate || (card.members?.length ?? 0) > 0) && (
+              <div className="tcm__meta-row">
+                {(card.labels?.length ?? 0) > 0 && card.labels!.map((l) => (
                   <span key={l.id} className="tcm__label-badge" style={{ background: l.color }}>{l.text}</span>
                 ))}
-              </div>
-            )}
-
-            {(card.dueDate || card.startDate) && (
-              <div className="tcm__dates-row">
-                <IconCalendar />
-                {card.startDate && (
-                  <span className="tcm__date-chip">
-                    {new Date(card.startDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    {card.startTime && <span className="tcm__date-time">{card.startTime}</span>}
+                {(card.dueDate || card.startDate) && (
+                  <span className="tcm__date-chip tcm__date-chip--group">
+                    <IconCalendar />
+                    {card.startDate && (
+                      <span>
+                        {new Date(card.startDate).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
+                      </span>
+                    )}
+                    {card.startDate && card.dueDate && <span className="tcm__date-sep">→</span>}
+                    {card.dueDate && (
+                      <span className="tcm__date-chip--due-inner">
+                        {new Date(card.dueDate).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
+                      </span>
+                    )}
                   </span>
                 )}
-                {card.startDate && card.dueDate && <span className="tcm__date-sep">→</span>}
-                {card.dueDate && (
-                  <span className="tcm__date-chip tcm__date-chip--due">
-                    {new Date(card.dueDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    {card.dueTime && <span className="tcm__date-time">{card.dueTime}</span>}
+                {(card.members?.length ?? 0) > 0 && card.members!.map((m) => (
+                  <span key={m} className="tcm__member-chip">
+                    <span className="tcm__member-chip-avatar">{m[0]?.toUpperCase()}</span>
+                    {m}
                   </span>
-                )}
-              </div>
-            )}
-
-            {(card.members?.length ?? 0) > 0 && (
-              <div className="tcm__members-row">
-                <IconUsers />
-                {card.members!.map((m) => (
-                  <span key={m} className="tcm__member-chip">{m}</span>
                 ))}
               </div>
             )}
@@ -153,7 +208,12 @@ export const TodoCardModal = memo(function TodoCardModal({
             </div>
 
             {activePanel && createPortal(
-              <div ref={panelRef} className="tcm__panel" style={panelStyle} onClick={(e) => e.stopPropagation()}>
+              <div
+                ref={panelRef}
+                className={`tcm__panel${activePanel === 'dates' ? ' tcm__panel--dates' : ''}`}
+                style={panelStyle}
+                onClick={(e) => e.stopPropagation()}
+              >
                 {activePanel === 'labels' && <LabelsPanel card={card} onCardUpdate={onCardUpdate} />}
                 {activePanel === 'dates' && <DatesPanel card={card} onCardUpdate={onCardUpdate} />}
                 {activePanel === 'checklist' && <ChecklistPanel card={card} onCardUpdate={onCardUpdate} />}
@@ -168,7 +228,7 @@ export const TodoCardModal = memo(function TodoCardModal({
 
             <section className="tcm__section">
               <h3 className="tcm__section-label">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="15" y2="18"/></svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="15" y2="18"/></svg>
                 Описание
               </h3>
               <div className={`tcm__desc-wrap${descFocused ? ' tcm__desc-wrap--focus' : ''}`}>
@@ -186,28 +246,55 @@ export const TodoCardModal = memo(function TodoCardModal({
           </div>
 
           <aside className="tcm__aside">
-            <div className="tcm__aside-head">
-              <span className="tcm__aside-label">
+            <div className="tcm__aside-section">
+              <h3 className="tcm__aside-heading">
                 <IconComment />
-                Комментарии и события
-              </span>
-              <button type="button" className="tcm__details-btn">Показать подробности</button>
-            </div>
-            <div className="tcm__comment-box">
-              <input type="text" className="tcm__comment-input" placeholder="Напишите комментарий..." aria-label="Комментарий" />
-            </div>
-            <div className="tcm__activity">
-              <div className="tcm__activity-dot" aria-hidden />
-              <div className="tcm__activity-content">
-                <p className="tcm__activity-text">Карточка добавлена в список «{columnTitle}»</p>
-                <span className="tcm__activity-time">только что</span>
+                Активность
+              </h3>
+
+              <div className="tcm__comment-compose">
+                <div className="tcm__comment-avatar tcm__comment-avatar--me">Я</div>
+                <div className="tcm__comment-compose-wrap">
+                  <textarea
+                    className="tcm__comment-input"
+                    placeholder="Написать комментарий…"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    rows={1}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setCommentText('') }
+                    }}
+                    aria-label="Комментарий"
+                  />
+                  {commentText.trim() && (
+                    <button
+                      type="button"
+                      className="tcm__comment-send"
+                      onClick={() => setCommentText('')}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="tcm__activity-feed">
+                <div className="tcm__activity-item">
+                  <div className="tcm__activity-avatar">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.6 5H8.4a2 2 0 0 0-1.9 1.3L5 10 3 8"/><path d="M3.5 13H6a2 2 0 0 1 2 2v0a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v0a2 2 0 0 1 2-2h2.5"/><rect x="2" y="8" width="20" height="13" rx="2"/></svg>
+                  </div>
+                  <div className="tcm__activity-body">
+                    <p className="tcm__activity-text">Карточка добавлена в список <strong>«{columnTitle}»</strong></p>
+                    <span className="tcm__activity-time">только что</span>
+                  </div>
+                </div>
               </div>
             </div>
 
             {onArchive && (
-              <div className="tcm__aside-actions">
+              <div className="tcm__aside-footer">
                 <button type="button" className="tcm__archive-btn" onClick={onArchive}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.6 5H8.4a2 2 0 0 0-1.9 1.3L5 10 3 8"/><path d="M3.5 13H6a2 2 0 0 1 2 2v0a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v0a2 2 0 0 1 2-2h2.5"/><rect x="2" y="8" width="20" height="13" rx="2"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.6 5H8.4a2 2 0 0 0-1.9 1.3L5 10 3 8"/><path d="M3.5 13H6a2 2 0 0 1 2 2v0a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v0a2 2 0 0 1 2-2h2.5"/><rect x="2" y="8" width="20" height="13" rx="2"/></svg>
                   Архивировать
                 </button>
               </div>
@@ -281,9 +368,7 @@ function DatesPanel({ card, onCardUpdate }: { card: TodoCard; onCardUpdate: (p: 
   type Field = 'start' | 'due'
   const [activeField, setActiveField] = useState<Field>('start')
   const [startDate, setStartDate] = useState(card.startDate ?? '')
-  const [startTime, setStartTime] = useState(card.startTime ?? '')
   const [dueDate, setDueDate] = useState(card.dueDate ?? '')
-  const [dueTime, setDueTime] = useState(card.dueTime ?? '')
   const todayStr = dateToStr(new Date())
 
   const selectedStr = activeField === 'start' ? startDate : dueDate
@@ -311,15 +396,16 @@ function DatesPanel({ card, onCardUpdate }: { card: TodoCard; onCardUpdate: (p: 
   const apply = () => {
     onCardUpdate({
       startDate: startDate || undefined,
-      startTime: startTime || undefined,
+      startTime: undefined,
       dueDate: dueDate || undefined,
-      dueTime: dueTime || undefined,
+      dueTime: undefined,
     })
   }
 
   const clear = () => {
     onCardUpdate({ startDate: undefined, startTime: undefined, dueDate: undefined, dueTime: undefined })
-    setStartDate(''); setStartTime(''); setDueDate(''); setDueTime('')
+    setStartDate('')
+    setDueDate('')
   }
 
   const formatDisplay = (date: string) => {
@@ -330,7 +416,7 @@ function DatesPanel({ card, onCardUpdate }: { card: TodoCard; onCardUpdate: (p: 
 
   return (
     <div className="tcm__panel-inner tcm__panel-inner--dates">
-      <h4 className="tcm__panel-title">Даты и время</h4>
+      <h4 className="tcm__panel-title">Даты</h4>
 
       <div className="tcm__dp-tabs">
         <button type="button" className={`tcm__dp-tab${activeField === 'start' ? ' tcm__dp-tab--active' : ''}`} onClick={() => { setActiveField('start'); if (startDate) { const d = new Date(startDate); setViewYear(d.getFullYear()); setViewMonth(d.getMonth()) } }}>
@@ -381,16 +467,14 @@ function DatesPanel({ card, onCardUpdate }: { card: TodoCard; onCardUpdate: (p: 
       <div className="tcm__dp-fields">
         <div className="tcm__dp-field-group">
           <span className="tcm__dp-field-label">Начало</span>
-          <div className="tcm__dp-field-row">
+          <div className="tcm__dp-field-row tcm__dp-field-row--date-only">
             <span className="tcm__dp-field-val">{formatDisplay(startDate)}</span>
-            <input type="time" className="tcm__dp-time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
           </div>
         </div>
         <div className="tcm__dp-field-group">
           <span className="tcm__dp-field-label">Срок</span>
-          <div className="tcm__dp-field-row">
+          <div className="tcm__dp-field-row tcm__dp-field-row--date-only">
             <span className="tcm__dp-field-val">{formatDisplay(dueDate)}</span>
-            <input type="time" className="tcm__dp-time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
           </div>
         </div>
       </div>

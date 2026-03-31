@@ -7,7 +7,7 @@ export function buildTicketsQuery(params: TicketsParams): string {
   if (params.status != null) q.set('status', params.status)
   if (params.priority != null) q.set('priority', params.priority)
   if (params.category != null) q.set('category', params.category)
-  if (params.created_by_user_id != null) q.set('created_by_user_id', String(params.created_by_user_id))
+  /* created_by_user_id не передаём — бэкенд подставляет автоматически для обычных пользователей */
   if (params.include_archived != null) q.set('include_archived', String(params.include_archived))
   return q.toString()
 }
@@ -19,7 +19,7 @@ export function buildTicketsPayload(params: TicketsParams): Record<string, unkno
   if (params.status != null) payload.status = params.status
   if (params.priority != null) payload.priority = params.priority
   if (params.category != null) payload.category = params.category
-  if (params.created_by_user_id != null) payload.created_by_user_id = params.created_by_user_id
+  /* created_by_user_id не передаём — бэкенд подставляет автоматически */
   if (params.include_archived != null) payload.include_archived = params.include_archived
   return payload
 }

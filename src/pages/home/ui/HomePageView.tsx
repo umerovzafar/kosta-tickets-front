@@ -113,7 +113,7 @@ export function HomePageView() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   return (
-    <div className="home-page">
+    <div className={`home-page${isCollapsed && !isMobile ? ' home-page--collapsed' : ''}`}>
       {showCreateForm && (
         <TicketCreateModal
           onClose={() => setShowCreateForm(false)}
@@ -187,7 +187,13 @@ export function HomePageView() {
 
         <div className="home-page__main-inner">
           {!ticketsError && !ticketsLoading && (
-            <HomeStats total={tickets.length} ticketStats={ticketStats} />
+            <HomeStats
+              total={tickets.length}
+              ticketStats={ticketStats}
+              filterStatus={filterStatus}
+              setFilterStatus={setFilterStatus}
+              statuses={statuses}
+            />
           )}
 
           <div className="home-page__content-grid home-page__content-grid--notifications-hidden">

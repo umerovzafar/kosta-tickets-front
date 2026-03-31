@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { createPortal } from 'react-dom'
 import type { NotificationItem } from '@entities/notifications/wsClient'
 
 const IconBell = memo(function IconBell() {
@@ -50,7 +51,7 @@ export const HomeNotificationsModal = memo(function HomeNotificationsModal(props
     onClose()
   }
 
-  return (
+  const modal = (
     <div className="hnm" role="dialog" aria-modal="true" aria-labelledby="hnm-title">
       <div className="hnm__backdrop" onClick={onClose} role="button" tabIndex={-1} aria-label="Закрыть" />
       <div className="hnm__box" onClick={(e) => e.stopPropagation()}>
@@ -144,4 +145,7 @@ export const HomeNotificationsModal = memo(function HomeNotificationsModal(props
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return null
+  return createPortal(modal, document.body)
 })

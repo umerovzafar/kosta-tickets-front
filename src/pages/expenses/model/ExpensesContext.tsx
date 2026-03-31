@@ -20,12 +20,15 @@ import {
   generateId,
   isDateInRange,
 } from './utils'
-import { loadExpensesFromStorage, saveExpensesToStorage, loadCommentsFromStorage, saveCommentsToStorage } from './lib/storage'
+import { loadExpensesFromStorage, saveExpensesToStorage } from './lib/storage'
 import { useExpensesReports } from './hooks/useExpensesReports'
+import { useExpensesServerData } from './hooks/useExpensesServerData'
 import type { ExpenseItem, ReportViewMode } from './types'
 import type { ExpensesContextValue } from './ExpensesContext.types'
 
 const ExpensesContext = createContext<ExpensesContextValue | null>(null)
+
+const EXPENSES_OFFLINE = import.meta.env.VITE_EXPENSES_OFFLINE === 'true'
 
 export function useExpenses() {
   const ctx = useContext(ExpensesContext)
@@ -42,14 +45,15 @@ type ExpensesProviderProps = {
 
 export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleCollapse }: ExpensesProviderProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false)
-  const [expenses, setExpenses] = useState<ExpenseItem[]>(loadExpensesFromStorage)
+  const [expenses, setExpenses] = useState<ExpenseItem[]>(() =>
+    EXPENSES_OFFLINE ? loadExpensesFromStorage() : [],
+  )
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(() => toDateKey(new Date()))
   const [reportViewMode, setReportViewMode] = useState<ReportViewMode>('day')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [formDate, setFormDate] = useState<string | null>(null)
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null)
-  const [dayComments, setDayCommentsState] = useState<Record<string, string>>(loadCommentsFromStorage)
   const [dateRange, setDateRange] = useState<{ start: string; end: string } | null>(null)
   const [periodRange, setPeriodRange] = useState(() => {
     const today = new Date()
@@ -57,20 +61,31 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
     const last = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     return { start: toDateKey(first), end: toDateKey(last) }
   })
-  const [isCommentModalOpen, setIsCommentModalOpen] = useState(false)
-  const [commentModalDate, setCommentModalDate] = useState<string | null>(null)
-
   const todayKey = useMemo(() => toDateKey(new Date()), [])
+
+  const { refetch: refetchExpensesApi, ...server } = useExpensesServerData(
+    currentMonth,
+    selectedDate,
+    !EXPENSES_OFFLINE,
+  )
+
+  useEffect(() => {
+    if (EXPENSES_OFFLINE) return
+    if (!selectedDate) return
+    setExpenses((prev) => {
+      const withoutServerForDate = prev.filter(
+        (e) => !(e.date === selectedDate && e.id.startsWith('er-')),
+      )
+      return [...withoutServerForDate, ...server.dayItems]
+    })
+  }, [EXPENSES_OFFLINE, selectedDate, server.dayItems])
 
   const reports = useExpensesReports(expenses, selectedDate, periodRange)
 
   useEffect(() => {
+    if (!EXPENSES_OFFLINE) return
     saveExpensesToStorage(expenses)
   }, [expenses])
-
-  useEffect(() => {
-    saveCommentsToStorage(dayComments)
-  }, [dayComments])
 
   useEffect(() => {
     if (!isMobile) setIsMobileOpen(false)
@@ -79,18 +94,24 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
   useEffect(() => {
     if (isMobile && isMobileOpen) document.body.style.overflow = 'hidden'
     else document.body.style.overflow = ''
-    return () => { document.body.style.overflow = '' }
+    return () => {
+      document.body.style.overflow = ''
+    }
   }, [isMobile, isMobileOpen])
 
   useEffect(() => {
     if (!isMobile || !isMobileOpen) return
-    const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsMobileOpen(false) }
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMobileOpen(false)
+    }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
   }, [isMobile, isMobileOpen])
 
   const monthDays = useMemo(() => buildMonthGrid(currentMonth), [currentMonth])
   const monthLabel = currentMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+
+  const expensesByDay = EXPENSES_OFFLINE ? reports.expensesByDay : server.expensesByDay
 
   const addExpense = useCallback((item: Omit<ExpenseItem, 'id'>) => {
     const newItem: ExpenseItem = {
@@ -101,14 +122,13 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
     setExpenses((prev) => [...prev, newItem])
   }, [])
 
-  const removeExpense = useCallback((id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id))
-  }, [])
+  const reloadExpenses = useCallback(() => {
+    if (EXPENSES_OFFLINE) setExpenses(loadExpensesFromStorage())
+    else refetchExpensesApi()
+  }, [refetchExpensesApi])
 
   const updateExpense = useCallback((id: string, patch: Partial<ExpenseItem>) => {
-    setExpenses((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-    )
+    setExpenses((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)))
   }, [])
 
   const openFormForDate = useCallback((date: string) => {
@@ -131,34 +151,12 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
     setEditingExpense(null)
   }, [])
 
-  const setDayComment = useCallback((date: string, comment: string) => {
-    setDayCommentsState((prev) => {
-      const next = { ...prev }
-      if (comment.trim()) {
-        next[date] = comment.trim()
-      } else {
-        delete next[date]
-      }
-      return next
-    })
-  }, [])
-
-  const openCommentModal = useCallback((date: string) => {
-    setCommentModalDate(date)
-    setIsCommentModalOpen(true)
-  }, [])
-
-  const closeCommentModal = useCallback(() => {
-    setIsCommentModalOpen(false)
-    setCommentModalDate(null)
-  }, [])
-
   const isDateInRangeFn = useCallback(
     (dateKey: string) => {
       if (!dateRange) return false
       return isDateInRange(dateKey, dateRange.start, dateRange.end)
     },
-    [dateRange]
+    [dateRange],
   )
 
   const value = useMemo<ExpensesContextValue>(
@@ -177,8 +175,12 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
       setSelectedDate,
       todayKey,
       expenses,
+      expensesOfflineMode: EXPENSES_OFFLINE,
+      refetchExpensesApi,
+      expensesApiLoading: server.loading,
+      expensesApiError: server.error,
       addExpense,
-      removeExpense,
+      reloadExpenses,
       updateExpense,
       reportViewMode,
       setReportViewMode,
@@ -188,22 +190,16 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
       periodReport: reports.periodReport,
       periodRange,
       setPeriodRange,
-      expensesByDay: reports.expensesByDay,
+      expensesByDay,
       isFormOpen,
       openFormForDate,
       openFormForEdit,
       closeForm,
       formDate,
       editingExpense,
-      dayComments,
-      setDayComment,
       dateRange,
       setDateRange,
       isDateInRange: isDateInRangeFn,
-      isCommentModalOpen,
-      commentModalDate,
-      openCommentModal,
-      closeCommentModal,
       EXPENSE_CATEGORIES,
       CATEGORY_META,
       WEEKDAYS_SHORT,
@@ -220,8 +216,11 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
       selectedDate,
       todayKey,
       expenses,
+      refetchExpensesApi,
+      server.loading,
+      server.error,
       addExpense,
-      removeExpense,
+      reloadExpenses,
       updateExpense,
       reportViewMode,
       reports,
@@ -232,14 +231,9 @@ export function ExpensesProvider({ children, isMobile, isCollapsed, onToggleColl
       closeForm,
       formDate,
       editingExpense,
-      dayComments,
-      setDayComment,
       dateRange,
       isDateInRangeFn,
-      isCommentModalOpen,
-      commentModalDate,
-      openCommentModal,
-      closeCommentModal,
+      expensesByDay,
     ],
   )
 

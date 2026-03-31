@@ -4,7 +4,7 @@ import type { WorkdaySettings } from '@shared/lib/attendanceSettings'
 type WorkdaySettingsModalProps = {
   initial: WorkdaySettings
   onClose: () => void
-  onSave: (value: WorkdaySettings) => void
+  onSave: (value: WorkdaySettings) => Promise<void>
 }
 
 export function WorkdaySettingsModal({ initial, onClose, onSave }: WorkdaySettingsModalProps) {
@@ -12,14 +12,25 @@ export function WorkdaySettingsModal({ initial, onClose, onSave }: WorkdaySettin
   const [endTime, setEndTime] = useState(initial.endTime)
   const [lateMinutes, setLateMinutes] = useState(String(initial.lateMinutes))
   const [dailyHours, setDailyHours] = useState(String(initial.dailyHours))
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  const handleSave = () => {
-    onSave({
-      startTime: startTime || '09:00',
-      endTime: endTime || '18:00',
-      lateMinutes: Number(lateMinutes) || 0,
-      dailyHours: Number(dailyHours) || 0,
-    })
+  const handleSave = async () => {
+    setSaveError(null)
+    setSaving(true)
+    try {
+      await onSave({
+        startTime: startTime || '09:00',
+        endTime: endTime || '18:00',
+        lateMinutes: Number(lateMinutes) || 0,
+        dailyHours: Number(dailyHours) || 0,
+      })
+      onClose()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Не удалось сохранить настройки')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -39,7 +50,7 @@ export function WorkdaySettingsModal({ initial, onClose, onSave }: WorkdaySettin
               <p className="att-modal__desc">Предел опоздания, норма часов и переработка</p>
             </div>
           </div>
-          <button type="button" className="att-modal__close" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="att-modal__close" onClick={onClose} aria-label="Закрыть" disabled={saving}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -51,28 +62,31 @@ export function WorkdaySettingsModal({ initial, onClose, onSave }: WorkdaySettin
           <div className="att-modal__row-2">
             <label className="att-modal__field">
               <span className="att-modal__label">Начало рабочего дня</span>
-              <input type="time" className="att-modal__input" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              <input type="time" className="att-modal__input" value={startTime} onChange={(e) => setStartTime(e.target.value)} disabled={saving} />
             </label>
             <label className="att-modal__field">
               <span className="att-modal__label">Конец рабочего дня</span>
-              <input type="time" className="att-modal__input" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+              <input type="time" className="att-modal__input" value={endTime} onChange={(e) => setEndTime(e.target.value)} disabled={saving} />
             </label>
           </div>
           <label className="att-modal__field">
             <span className="att-modal__label">Предел опоздания (минут)</span>
-            <input type="number" min={0} className="att-modal__input" value={lateMinutes} onChange={(e) => setLateMinutes(e.target.value)} />
+            <input type="number" min={0} className="att-modal__input" value={lateMinutes} onChange={(e) => setLateMinutes(e.target.value)} disabled={saving} />
             <span className="att-modal__hint">Приход после начала дня + это кол-во минут = опоздание</span>
           </label>
           <label className="att-modal__field">
             <span className="att-modal__label">Норма часов в день</span>
-            <input type="number" min={0} step="0.5" className="att-modal__input" value={dailyHours} onChange={(e) => setDailyHours(e.target.value)} />
+            <input type="number" min={0} step="0.5" className="att-modal__input" value={dailyHours} onChange={(e) => setDailyHours(e.target.value)} disabled={saving} />
             <span className="att-modal__hint">Работа больше этого времени = переработка</span>
           </label>
+          {saveError && <p className="att-modal__error" role="alert">{saveError}</p>}
         </div>
 
         <div className="att-modal__foot">
-          <button type="button" className="att__btn att__btn--ghost" onClick={onClose}>Отмена</button>
-          <button type="button" className="att__btn att__btn--primary" onClick={handleSave}>Сохранить</button>
+          <button type="button" className="att__btn att__btn--ghost" onClick={onClose} disabled={saving}>Отмена</button>
+          <button type="button" className="att__btn att__btn--primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Сохранение…' : 'Сохранить'}
+          </button>
         </div>
       </div>
     </div>

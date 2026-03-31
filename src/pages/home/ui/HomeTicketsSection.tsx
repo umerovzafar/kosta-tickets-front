@@ -232,24 +232,30 @@ export const HomeTicketsSection = memo(function HomeTicketsSection(props: HomeTi
               </div>
               {filteredTickets.map((t) => {
                 const statusClass = getStatusTagClass(t.status)
+                const priorityLabel = priorities.find((p) => p.value === t.priority)?.label ?? t.priority
                 const iconEl =
                   statusClass === 'closed' ? <IconCheck /> :
                   statusClass === 'impossible' ? <IconWarning /> :
                   <IconInfo />
                 return (
                   <AnimatedLink key={t.uuid} to={getTicketDetailUrl(t.uuid)} className={`home-tickets__row home-tickets__row--${statusClass}`}>
-                    <span className="home-tickets__row-indicator" />
                     <span className="home-tickets__td home-tickets__td--theme">
                       <span className={`home-tickets__row-icon home-tickets__row-icon--${statusClass}`}>{iconEl}</span>
                       <span className="home-tickets__row-title">{t.theme}</span>
                     </span>
                     <span className="home-tickets__td home-tickets__td--author">{creatorNames[t.created_by_user_id] ?? '—'}</span>
                     <span className="home-tickets__td home-tickets__td--priority">
-                      <span className={`home-tickets__priority-badge ${getPriorityTagClass(t.priority)}`}>{t.priority}</span>
+                      <span
+                        className={`home-tickets__priority-wrap ${getPriorityTagClass(t.priority)}`}
+                        aria-label={priorityLabel}
+                      >
+                        <span className="home-tickets__priority-dot" aria-hidden />
+                        <span className="home-tickets__priority-tooltip">{priorityLabel}</span>
+                      </span>
                     </span>
                     <span className="home-tickets__td home-tickets__td--status">
                       <span className={`home-tickets__status-dot home-tickets__status-dot--${statusClass}`} />
-                      <span className="home-tickets__status-text">{t.status}</span>
+                      <span className="home-tickets__status-text">{statuses.find((s) => s.value === t.status)?.label ?? t.status}</span>
                     </span>
                     <span className="home-tickets__td home-tickets__td--date">{formatDateShort(t.created_at)}</span>
                   </AnimatedLink>

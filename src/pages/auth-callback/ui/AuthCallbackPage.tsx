@@ -1,15 +1,30 @@
 import { useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { setAccessToken } from '@shared/lib'
 import { routes } from '@shared/config'
 
+function parseCallbackParams(): { token: string | null; error: string | null } {
+  // Token is passed in hash fragment to avoid it appearing in server logs/history
+  const hash = window.location.hash.replace(/^#/, '')
+  if (hash) {
+    const hashParams = new URLSearchParams(hash)
+    const token = hashParams.get('access_token')
+    const error = hashParams.get('error')
+    if (token || error) return { token, error }
+  }
+  // Fallback for backwards compatibility
+  const searchParams = new URLSearchParams(window.location.search)
+  return {
+    token: searchParams.get('access_token'),
+    error: searchParams.get('error'),
+  }
+}
+
 export function AuthCallbackPage() {
-  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
   useEffect(() => {
-    const error = searchParams.get('error')
-    const token = searchParams.get('access_token')
+    const { token, error } = parseCallbackParams()
 
     if (error) {
       navigate(`${routes.login}?error=${error}`, { replace: true })
@@ -23,7 +38,7 @@ export function AuthCallbackPage() {
     } else {
       navigate(routes.login, { replace: true })
     }
-  }, [searchParams, navigate])
+  }, [navigate])
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', fontFamily: 'inherit' }}>

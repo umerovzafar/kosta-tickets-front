@@ -5,8 +5,10 @@ import { ProtectedRoute } from '@app/ProtectedRoute'
 import { GuestOnlyRoute } from '@app/GuestOnlyRoute'
 import { PageTransition } from '@app/PageTransition'
 import { TimeTrackingRoute } from '@app/TimeTrackingRoute'
+import { ExpensesAccessRoute } from '@app/ExpensesAccessRoute'
+import { ExpensesMgmtRoute } from '@app/ExpensesMgmtRoute'
 import { AdminPage } from '@pages/admin'
-import { AttendancePage, ExpensesPage, ExpensesReportPage, HelpPage, InventoryPage, RulesPage, TodoPage } from '@pages'
+import { AttendancePage, ExpensesPage, ExpensesReportPage, ExpensesRequestsPage, HelpPage, InventoryPage, RulesPage, TodoPage } from '@pages'
 import { AuthCallbackPage } from '@pages/auth-callback'
 import { HomePage } from '@pages/home'
 import { LoginPage } from '@pages/login'
@@ -39,8 +41,34 @@ const router = createBrowserRouter([
   { path: routes.inventory, element: withProtected(<InventoryPage />) },
   { path: routes.timeTracking, element: withProtected(<TimeTrackingRoute />) },
   { path: routes.projectDetail, element: withProtected(<ProjectDetailPage />) },
-  { path: routes.expenses, element: withProtected(<ExpensesPage />) },
-  { path: routes.expensesReport, element: withProtected(<ExpensesReportPage />) },
+  {
+    path: routes.expenses,
+    element: withProtected(
+      <ExpensesAccessRoute>
+        <ExpensesPage />
+      </ExpensesAccessRoute>,
+    ),
+  },
+  {
+    path: routes.expensesRequests,
+    element: withProtected(
+      <ExpensesAccessRoute>
+        <ExpensesMgmtRoute>
+          <ExpensesRequestsPage />
+        </ExpensesMgmtRoute>
+      </ExpensesAccessRoute>,
+    ),
+  },
+  {
+    path: routes.expensesReport,
+    element: withProtected(
+      <ExpensesAccessRoute>
+        <ExpensesMgmtRoute>
+          <ExpensesReportPage />
+        </ExpensesMgmtRoute>
+      </ExpensesAccessRoute>,
+    ),
+  },
   { path: routes.todo, element: withProtected(<TodoPage />) },
   { path: routes.rules, element: withProtected(<RulesPage />) },
   { path: routes.help, element: withProtected(<HelpPage />) },

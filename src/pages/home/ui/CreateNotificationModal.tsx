@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { createPortal } from 'react-dom'
 
 type CreateNotificationModalProps = {
   onClose: () => void
@@ -23,7 +24,7 @@ export const CreateNotificationModal = memo(function CreateNotificationModal(pro
     error,
   } = props
 
-  return (
+  const modal = (
     <div className="tm" role="dialog" aria-modal="true">
       <div className="tm__backdrop" onClick={onClose} role="button" tabIndex={-1} aria-label="Закрыть" />
       <div className="tm__box" onClick={(e) => e.stopPropagation()}>
@@ -58,4 +59,6 @@ export const CreateNotificationModal = memo(function CreateNotificationModal(pro
       </div>
     </div>
   )
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : null
 })

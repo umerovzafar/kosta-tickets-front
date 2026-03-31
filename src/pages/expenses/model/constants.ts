@@ -23,6 +23,15 @@ export const CATEGORY_META: Record<ExpenseCategory, { color: string; bg: string 
 export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
 export const STORAGE_KEY = 'expenses-calendar-data'
-export const COMMENTS_STORAGE_KEY = 'expenses-calendar-comments'
 
 export const DEFAULT_CURRENCY = 'UZS'
+
+/** Подсказки для поля «Подразделение» в заявке (можно ввести свой текст). */
+export const EXPENSE_REQUEST_DEPARTMENT_HINTS = [
+  'Юридический отдел',
+  'IT',
+  'Бухгалтерия',
+  'HR',
+  'Командировки',
+  'Администрация',
+] as const

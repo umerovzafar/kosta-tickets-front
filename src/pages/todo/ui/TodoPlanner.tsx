@@ -14,6 +14,7 @@ type TodoPlannerProps = {
   onNextMonth: () => void
   calendarConnected: boolean
   calendarEvents: CalendarEvent[]
+  calendarConnectError?: string | null
   onConnectCalendar: () => void
   onAddEvent?: (date: Date) => void
   onEditEvent?: (event: CalendarEvent) => void
@@ -83,6 +84,7 @@ export const TodoPlanner = memo(function TodoPlanner({
   onNextMonth,
   calendarConnected,
   calendarEvents,
+  calendarConnectError,
   onConnectCalendar,
   onAddEvent,
   onEditEvent,
@@ -308,13 +310,21 @@ export const TodoPlanner = memo(function TodoPlanner({
               <button type="button" className="todo-planner__connect-btn" onClick={onConnectCalendar}>
                 Подключить
               </button>
+              {calendarConnectError && (
+                <p className="todo-planner__connect-error" role="alert">
+                  {calendarConnectError}
+                </p>
+              )}
             </div>
           ) : (
             <div className="todo-planner__schedule">
               <div className="todo-planner__schedule-head">
                 <span className="todo-planner__schedule-title">Расписание</span>
                 <span className="todo-planner__schedule-now">
-                  {pad2(nowHour)}:{pad2(nowMinute)}<span className="todo-planner__schedule-sec">:{pad2(nowSecond)}</span>
+                  <span className="todo-planner__schedule-hm">
+                    {pad2(nowHour)}:{pad2(nowMinute)}
+                  </span>
+                  <span className="todo-planner__schedule-sec">:{pad2(nowSecond)}</span>
                 </span>
               </div>
               <div className="todo-planner__hours">

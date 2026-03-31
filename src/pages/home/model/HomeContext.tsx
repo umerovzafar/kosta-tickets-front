@@ -10,9 +10,11 @@ import {
 } from 'react'
 import {
   createTicket,
-  listTicketsWs,
-  listStatusesWs,
-  listPrioritiesWs,
+  getTickets,
+  getStatuses,
+  getPriorities,
+  subscribeTicketsWsPush,
+  connectTicketsWsWhenReady,
   type Ticket,
   type StatusItem,
   type PriorityItem,
@@ -25,7 +27,13 @@ import {
 } from '@entities/notifications/wsClient'
 import { useCurrentUser } from '@shared/hooks'
 import { formatDateShort } from '@shared/lib/formatDate'
-import { getPriorityTagClass, getStatusTagClass, TICKET_CATEGORIES, isITRole } from './constants'
+import {
+  getPriorityTagClass,
+  getStatusTagClass,
+  ticketStatusBucketForStats,
+  TICKET_CATEGORIES,
+  isITRole,
+} from './constants'
 import type { TicketStats } from './types'
 
 type HomeContextValue = {
@@ -142,7 +150,7 @@ export function HomeProvider({ children, isMobile, isCollapsed, onToggleCollapse
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createSubmitting, setCreateSubmitting] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [createForm, setCreateForm] = useState({ theme: '', description: '', category: 'Техника', priority: 'Средний' })
+  const [createForm, setCreateForm] = useState({ theme: '', description: '', category: 'Техника', priority: 'medium' })
   const [createFile, setCreateFile] = useState<File | null>(null)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false)
@@ -178,14 +186,14 @@ export function HomeProvider({ children, isMobile, isCollapsed, onToggleCollapse
   const ticketStats: TicketStats = useMemo(() => {
     const result = { open: 0, inProgress: 0, closed: 0, impossible: 0 }
     tickets.forEach((t) => {
-      const cls = getStatusTagClass(t.status)
-      if (cls === 'closed') result.closed += 1
-      else if (cls === 'in-progress' || cls === 'approval') result.inProgress += 1
-      else if (cls === 'impossible') result.impossible += 1
+      const bucket = ticketStatusBucketForStats(t.status, statuses)
+      if (bucket === 'closed') result.closed += 1
+      else if (bucket === 'inProgress') result.inProgress += 1
+      else if (bucket === 'impossible') result.impossible += 1
       else result.open += 1
     })
     return result
-  }, [tickets])
+  }, [tickets, statuses])
 
   const filteredNotifications = useMemo(() => {
     if (!notificationSearch.trim()) return notifications
@@ -308,25 +316,29 @@ export function HomeProvider({ children, isMobile, isCollapsed, onToggleCollapse
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [filterPriorityOpen])
 
-  const loadTickets = useCallback(async () => {
-    if (user?.id == null) return
-    setTicketsLoading(true)
-    setTicketsError(null)
-    try {
-      const list = await listTicketsWs({
-        created_by_user_id: user.id,
+  const fetchTicketsForHome = useCallback(
+    () =>
+      getTickets({
         limit: 50,
         include_archived: false,
         ...(filterStatus ? { status: filterStatus } : {}),
         ...(filterPriority ? { priority: filterPriority } : {}),
-      })
+      }),
+    [filterStatus, filterPriority],
+  )
+
+  const loadTickets = useCallback(async () => {
+    setTicketsLoading(true)
+    setTicketsError(null)
+    try {
+      const list = await fetchTicketsForHome()
       setTickets(list)
     } catch (e) {
       setTicketsError(e instanceof Error ? e.message : 'Ошибка загрузки заявок')
     } finally {
       setTicketsLoading(false)
     }
-  }, [user?.id, filterStatus, filterPriority])
+  }, [fetchTicketsForHome])
 
   useEffect(() => {
     if (!isMobile) setIsMobileOpen(false)
@@ -366,13 +378,29 @@ export function HomeProvider({ children, isMobile, isCollapsed, onToggleCollapse
   }, [showCreateForm])
 
   useEffect(() => {
-    listStatusesWs().then(setStatuses).catch(() => {})
-    listPrioritiesWs().then(setPriorities).catch(() => {})
+    getStatuses().then(setStatuses).catch(() => {})
+    getPriorities().then(setPriorities).catch(() => {})
   }, [])
 
   useEffect(() => {
     loadTickets()
   }, [loadTickets])
+
+  useEffect(() => {
+    if (!user) return
+    connectTicketsWsWhenReady().catch(() => {})
+  }, [user])
+
+  /* Push: { push: true, event, ticket_uuid, ... } — обновляем список через REST (TICKETS_FRONTEND.md). */
+  useEffect(() => {
+    const off = subscribeTicketsWsPush((msg) => {
+      const evRaw = msg.event ?? msg.type
+      const ev = typeof evRaw === 'string' ? evRaw : ''
+      if (!(ev.startsWith('ticket_') || ev.startsWith('comment_'))) return
+      fetchTicketsForHome().then(setTickets).catch(() => {})
+    })
+    return off
+  }, [fetchTicketsForHome])
 
   const handleCreateSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -380,24 +408,30 @@ export function HomeProvider({ children, isMobile, isCollapsed, onToggleCollapse
       setCreateSubmitting(true)
       setCreateError(null)
       try {
-        await createTicket({
+        const created = await createTicket({
           theme: createForm.theme.trim(),
           description: createForm.description.trim(),
           category: createForm.category || 'Общее',
-          priority: createForm.priority || 'Средний',
+          priority: createForm.priority || 'medium',
           attachment: createFile || undefined,
         })
-        setCreateForm({ theme: '', description: '', category: 'Техника', priority: 'Средний' })
+        setCreateForm({ theme: '', description: '', category: 'Техника', priority: 'medium' })
         setCreateFile(null)
         setShowCreateForm(false)
-        loadTickets()
+        try {
+          const list = await fetchTicketsForHome()
+          const merged = list.some((t) => t.uuid === created.uuid) ? list : [created, ...list]
+          setTickets(merged)
+        } catch {
+          setTickets((prev) => (prev.some((t) => t.uuid === created.uuid) ? prev : [created, ...prev]))
+        }
       } catch (err) {
         setCreateError(err instanceof Error ? err.message : 'Ошибка создания заявки')
       } finally {
         setCreateSubmitting(false)
       }
     },
-    [createForm, createFile, loadTickets],
+    [createForm, createFile, fetchTicketsForHome],
   )
 
   const value: HomeContextValue = useMemo(

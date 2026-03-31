@@ -1,4 +1,19 @@
-import type { ExpenseItem, DaySummary, WeekSummary, PeriodSummary } from './types'
+import type { ExpenseItem, DaySummary, WeekSummary, PeriodSummary, ExpenseRequestStatus } from './types'
+
+/** Статус по строке календаря; без поля — считаем согласованные (до введения согласования) */
+export function getExpenseApprovalStatus(e: ExpenseItem): ExpenseRequestStatus {
+  return e.approvalStatus ?? 'approved'
+}
+
+/** Учитывается в сумме по дню в календаре (только согласовано) */
+export function isExpenseApprovedForCalendar(e: ExpenseItem): boolean {
+  return getExpenseApprovalStatus(e) === 'approved'
+}
+
+/** Согласованные операции не редактируются (см. заявки на расходы) */
+export function isExpenseEditable(e: ExpenseItem): boolean {
+  return getExpenseApprovalStatus(e) !== 'approved'
+}
 
 export function buildMonthGrid(baseDate: Date): Date[] {
   const year = baseDate.getFullYear()
@@ -104,6 +119,19 @@ export function buildPeriodSummary(start: string, end: string, expenses: Expense
 
 export function formatAmount(n: number, currency = 'UZS'): string {
   return `${n.toLocaleString('ru-RU')} ${currency}`
+}
+
+/** Сумма с валютой для заявок и отчётов (Intl). */
+export function formatMoneyAmount(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: currency.length === 3 ? currency : 'UZS',
+      maximumFractionDigits: 0,
+    }).format(amount)
+  } catch {
+    return `${amount.toLocaleString('ru-RU')} ${currency}`
+  }
 }
 
 export function generateId(): string {

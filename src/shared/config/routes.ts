@@ -12,6 +12,7 @@ export const routes = {
   projectDetail: '/time-tracking/project/:id',
   timesheet: '/timesheet',
   expenses: '/expenses',
+  expensesRequests: '/expenses/requests',
   expensesReport: '/expenses/report',
   rules: '/rules',
   help: '/help',

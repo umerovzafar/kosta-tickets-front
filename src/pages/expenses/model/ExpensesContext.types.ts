@@ -18,8 +18,15 @@ export type ExpensesContextValue = {
   todayKey: string
 
   expenses: ExpenseItem[]
+  /** false — данные календаря/дня с gateway `/api/v1/expenses` (см. EXPENSES_FRONTEND.md); true — только localStorage */
+  expensesOfflineMode: boolean
+  /** Обновить календарь и список за выбранный день с сервера */
+  refetchExpensesApi: () => void
+  expensesApiLoading: boolean
+  expensesApiError: string | null
   addExpense: (item: Omit<ExpenseItem, 'id'>) => void
-  removeExpense: (id: string) => void
+  /** Перечитать расходы из localStorage (после согласования заявки и синхронизации) */
+  reloadExpenses: () => void
   updateExpense: (id: string, patch: Partial<ExpenseItem>) => void
 
   reportViewMode: ReportViewMode
@@ -42,17 +49,9 @@ export type ExpensesContextValue = {
   formDate: string | null
   editingExpense: ExpenseItem | null
 
-  dayComments: Record<string, string>
-  setDayComment: (date: string, comment: string) => void
-
   dateRange: { start: string; end: string } | null
   setDateRange: (range: { start: string; end: string } | null) => void
   isDateInRange: (dateKey: string) => boolean
-
-  isCommentModalOpen: boolean
-  commentModalDate: string | null
-  openCommentModal: (date: string) => void
-  closeCommentModal: () => void
 
   EXPENSE_CATEGORIES: typeof EXPENSE_CATEGORIES
   CATEGORY_META: typeof CATEGORY_META

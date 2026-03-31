@@ -89,6 +89,21 @@ function darkenHex(hex: string, factor: number): string {
   return rgbToHex(r, g, b)
 }
 
+/** Полупрозрачный «стекло»-хром из оттенка среднего цвета фото (тёмный, но в тон картинке). */
+function darkChromeFromPhotoHue(
+  avgR: number,
+  avgG: number,
+  avgB: number,
+  lightness: number,
+  alpha: number
+): string {
+  const { h, s } = rgbToHsl(avgR, avgG, avgB)
+  const sat = clamp01(s * 0.38 + 0.04)
+  const l = clamp01(lightness)
+  const { r, g, b } = hslToRgb(h, sat, l)
+  return `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${alpha})`
+}
+
 export function deriveColumnColors(accentHex: string): Pick<
   ThemeVars,
   'columnTodayBg' | 'columnTodayText' | 'columnWeekBg' | 'columnWeekText' | 'columnLaterBg' | 'columnLaterText'
@@ -169,14 +184,20 @@ export async function deriveThemeFromImage(imageUrl: string): Promise<ThemeVars>
 
   const accent = darkenHex(rgbToHex(best.r, best.g, best.b), 0.86)
   const text = isDark ? '#f1f5f9' : '#0f172a'
-  const muted = isDark ? 'rgba(226,232,240,0.65)' : 'rgba(15,23,42,0.62)'
-  const surface = isDark ? 'rgba(2,6,23,0.78)' : 'rgba(240,241,243,0.88)'
-  const surface2 = isDark ? 'rgba(15,23,42,0.62)' : 'rgba(232,234,237,0.9)'
+  const muted = isDark ? 'rgba(226,232,240,0.88)' : 'rgba(15,23,42,0.62)'
+  const surface = isDark
+    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.118, 0.76)
+    : 'rgba(240,241,243,0.88)'
+  const surface2 = isDark
+    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.096, 0.82)
+    : 'rgba(232,234,237,0.9)'
   const panelBg = isDark ? '#1e293b' : '#ffffff'
-  const border = isDark ? 'rgba(148,163,184,0.26)' : 'rgba(148,163,184,0.38)'
+  const border = isDark ? 'rgba(148,163,184,0.58)' : 'rgba(148,163,184,0.38)'
   const shadow = isDark ? '0 14px 34px rgba(0,0,0,0.52)' : '0 14px 34px rgba(15,23,42,0.18)'
-  const navShadow = isDark ? '0 8px 18px rgba(0,0,0,0.42)' : '0 8px 18px rgba(15,23,42,0.12)'
-  const headerBg = isDark ? 'rgba(2,6,23,0.74)' : 'rgba(238,240,243,0.88)'
+  const navShadow = isDark ? '0 8px 22px rgba(0,0,0,0.48)' : '0 8px 18px rgba(15,23,42,0.12)'
+  const headerBg = isDark
+    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.078, 0.9)
+    : 'rgba(238,240,243,0.88)'
   const columns = deriveColumnColors(accent)
 
   return { isDark, accent, text, muted, surface, surface2, panelBg, border, shadow, headerBg, navShadow, ...columns }

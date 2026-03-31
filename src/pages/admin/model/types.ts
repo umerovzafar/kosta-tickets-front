@@ -3,6 +3,10 @@ export type LateRow = {
   department: string
   firstTime: string
   minutesLate: number
+  /** Для сопоставления с daily report */
+  personId?: string
+  explanationText?: string | null
+  explanationFileUrl?: string | null
 }
 
 export type AdminMetrics = {

@@ -10,7 +10,7 @@ export {
   getComments,
   addComment,
   updateComment,
-  deleteComment,
+  getAttachmentUrl,
 } from './api'
 export {
   listTicketsWs,
@@ -24,4 +24,6 @@ export {
   editCommentWs,
   deleteCommentWs,
   closeTicketsWs,
+  subscribeTicketsWsPush,
+  connectTicketsWsWhenReady,
 } from './ticketsWs'

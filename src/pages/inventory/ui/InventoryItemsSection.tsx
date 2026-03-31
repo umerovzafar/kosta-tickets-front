@@ -2,6 +2,7 @@ import { useInventory } from '../model'
 import { InvSelect } from './InvSelect'
 import { formatDateOnly } from '@shared/lib/formatDate'
 import { LIMIT } from '../model/constants'
+import { AuthImg } from '@shared/ui'
 
 export function InventoryItemsSection() {
   const {
@@ -30,7 +31,6 @@ export function InventoryItemsSection() {
     setDeleteTarget,
     categoryById,
     statusLabel,
-    getItemPhotoUrl,
     openEditItem,
     handleUnassign,
     handleArchive,
@@ -208,14 +208,13 @@ export function InventoryItemsSection() {
               {items.map((item) => {
                 const cat = categoryById(item.category_id)
                 const assigned = users.find((u) => u.id === item.assigned_to_user_id)
-                const photoUrl = getItemPhotoUrl(item.photo_path)
                 return (
                   <tr key={item.uuid} className={item.is_archived ? 'inv__row--dim' : ''}>
                     <td data-label="Название">
                       <div className="inv__name-cell">
-                        {photoUrl && (
+                        {item.photo_path && (
                           <span className="inv__thumb">
-                            <img src={photoUrl} alt="" />
+                            <AuthImg mediaPath={item.photo_path} alt="" />
                           </span>
                         )}
                         <div>

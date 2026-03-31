@@ -20,6 +20,8 @@ export type AttendanceQuery = {
   status?: string
   cameraIp?: string
   maxRecordsPerDevice?: number
+  /** Отмена запроса (например таймаут через AbortSignal.timeout) */
+  signal?: AbortSignal
 }
 
 export type AttendanceByCamera = {

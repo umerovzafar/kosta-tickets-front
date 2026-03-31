@@ -12,16 +12,31 @@ export function exportAttendanceToCsv(
   const from = dateFrom || defaultFrom()
   const to = dateTo || defaultTo()
 
-  const header = ['Дата', 'Сотрудник', 'Приход', 'Уход', 'Точка прохода']
-  const dataRows = rows.map((r) => [
-    r.date ? formatDateOnly(r.date) : '—',
-    r.name || '—',
-    r.firstTime ? formatTime(r.firstTime) : '—',
-    r.lastTime ? formatTime(r.lastTime) : '—',
-    r.firstCheckpoint === r.lastCheckpoint
-      ? r.firstCheckpoint
-      : `${r.firstCheckpoint} -> ${r.lastCheckpoint}`,
-  ])
+  const hasStatus = rows.some((r) => r.status)
+  const header = hasStatus
+    ? ['Дата', 'Сотрудник', 'Статус', 'Приход', 'Уход', 'Точка прохода']
+    : ['Дата', 'Сотрудник', 'Приход', 'Уход', 'Точка прохода']
+
+  const statusLabel = (s: GroupedRow['status']) => {
+    if (s === 'present_on_time') return 'Вовремя'
+    if (s === 'late') return 'Опоздание'
+    if (s === 'absent') return 'Отсутствует'
+    return ''
+  }
+
+  const dataRows = rows.map((r) => {
+    const base = [
+      r.date ? formatDateOnly(r.date) : '—',
+      r.name || '—',
+      r.firstTime ? formatTime(r.firstTime) : '—',
+      r.lastTime ? formatTime(r.lastTime) : '—',
+      r.firstCheckpoint === r.lastCheckpoint
+        ? r.firstCheckpoint
+        : `${r.firstCheckpoint} -> ${r.lastCheckpoint}`,
+    ]
+    if (!hasStatus) return base
+    return [base[0], base[1], statusLabel(r.status), base[2], base[3], base[4]]
+  })
 
   const csvLines = [header, ...dataRows].map((cols) =>
     cols.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';'),
