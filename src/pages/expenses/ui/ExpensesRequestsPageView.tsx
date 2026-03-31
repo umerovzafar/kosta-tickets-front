@@ -31,6 +31,40 @@ const EXPENSE_TYPE_LABEL: Record<ExpenseRequestExpenseType, string> = {
   non_reimbursable: 'Невозмещаемый',
 }
 
+const SKELETON_CARD_COUNT = 6
+
+function ExpenseRequestsPageSkeleton() {
+  return (
+    <div className="exp-req-page__tiles" aria-busy="true" aria-label="Загрузка списка заявок">
+      {Array.from({ length: SKELETON_CARD_COUNT }, (_, i) => (
+        <div key={i} className="exp-req-tile exp-req-tile--skel" aria-hidden>
+          <div className="exp-req-tile__head exp-req-skel-head">
+            <div className="exp-req-skel-line exp-req-skel-line--num" />
+            <div className="exp-req-skel-line exp-req-skel-line--status" />
+          </div>
+          <div className="exp-req-tile__body">
+            <div className="exp-req-skel-meta">
+              {Array.from({ length: 5 }, (_, j) => (
+                <div key={j} className="exp-req-skel-field-row">
+                  <div className="exp-req-skel-line exp-req-skel-line--dt" />
+                  <div
+                    className="exp-req-skel-line exp-req-skel-line--dd"
+                    style={{ maxWidth: `${68 + ((i + j) % 5) * 6}%` }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="exp-req-tile__bottom exp-req-skel-footer">
+              <div className="exp-req-skel-line exp-req-skel-line--amount" />
+              <div className="exp-req-skel-line exp-req-skel-line--type" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function ExpensesRequestsPageView() {
   const {
     isCollapsed,
@@ -196,9 +230,9 @@ export function ExpensesRequestsPageView() {
           </div>
         )}
         {!EXPENSES_OFFLINE && listLoading && !listError && (
-          <div className="exp-req-page__banner exp-req-page__banner--loading" aria-live="polite">
+          <span className="exp-req-page__sr-only" aria-live="polite">
             Загрузка заявок…
-          </div>
+          </span>
         )}
         {moderationError && (
           <div className="exp-req-page__banner exp-req-page__banner--error" role="alert">
@@ -210,7 +244,9 @@ export function ExpensesRequestsPageView() {
         )}
 
         <div className="exp-req-page__content">
-          {!EXPENSES_OFFLINE && listLoading ? null : sorted.length === 0 ? (
+          {!EXPENSES_OFFLINE && listLoading && !listError ? (
+            <ExpenseRequestsPageSkeleton />
+          ) : sorted.length === 0 ? (
             <p className="exp-req-page__empty">Заявок пока нет.</p>
           ) : (
             <div className="exp-req-page__tiles" role="list">
