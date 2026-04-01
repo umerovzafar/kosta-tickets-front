@@ -52,28 +52,33 @@ function applyFilters(requests: ExpenseRequest[], cfg: ReportConfig): ExpenseReq
 
 // ─── Styling helpers ─────────────────────────────────────
 
-const C_NAVY: ExcelJS.Color = { argb: 'FF1E293B' }
-const C_HEADER: ExcelJS.Color = { argb: 'FF334155' }
-const C_ACCENT: ExcelJS.Color = { argb: 'FF4F46E5' }
-const C_WHITE: ExcelJS.Color = { argb: 'FFFFFFFF' }
-const C_MUTED: ExcelJS.Color = { argb: 'FF64748B' }
-const C_ROW_ODD: ExcelJS.Color = { argb: 'FFFFFFFF' }
-const C_ROW_EVEN: ExcelJS.Color = { argb: 'FFF8FAFC' }
-const C_TOTAL: ExcelJS.Color = { argb: 'FFEEF2F9' }
-const C_BORDER: ExcelJS.Color = { argb: 'FFE2E8F0' }
-const C_BORDER_DARK: ExcelJS.Color = { argb: 'FF94A3B8' }
+// ExcelJS Color helper — argb-only variant (compatible at runtime)
+type AC = { argb: string }
 
-function solid(color: ExcelJS.Color): ExcelJS.Fill {
-  return { type: 'pattern', pattern: 'solid', fgColor: color }
+const C_NAVY: AC = { argb: 'FF1E293B' }
+const C_HEADER: AC = { argb: 'FF334155' }
+const C_ACCENT: AC = { argb: 'FF4F46E5' }
+const C_WHITE: AC = { argb: 'FFFFFFFF' }
+const C_MUTED: AC = { argb: 'FF64748B' }
+const C_ROW_ODD: AC = { argb: 'FFFFFFFF' }
+const C_ROW_EVEN: AC = { argb: 'FFF8FAFC' }
+const C_TOTAL: AC = { argb: 'FFEEF2F9' }
+const C_BORDER: AC = { argb: 'FFE2E8F0' }
+const C_BORDER_DARK: AC = { argb: 'FF94A3B8' }
+
+function solid(color: AC): ExcelJS.Fill {
+  return { type: 'pattern', pattern: 'solid', fgColor: color as ExcelJS.Color }
 }
 
-function border(color = C_BORDER): Partial<ExcelJS.Borders> {
+function border(color: AC = C_BORDER): Partial<ExcelJS.Borders> {
   const s: ExcelJS.BorderStyle = 'thin'
-  return { top: { style: s, color }, bottom: { style: s, color }, left: { style: s, color }, right: { style: s, color } }
+  const c = color as ExcelJS.Color
+  return { top: { style: s, color: c }, bottom: { style: s, color: c }, left: { style: s, color: c }, right: { style: s, color: c } }
 }
 
-function font(opts: Partial<ExcelJS.Font> = {}): Partial<ExcelJS.Font> {
-  return { name: 'Calibri', size: 9, ...opts }
+function font(opts: Omit<Partial<ExcelJS.Font>, 'wrapText'> & { color?: AC } = {}): Partial<ExcelJS.Font> {
+  const { color, ...rest } = opts
+  return { name: 'Calibri', size: 9, ...(color ? { color: color as ExcelJS.Color } : {}), ...rest }
 }
 
 // ─── Main export ─────────────────────────────────────────
@@ -178,14 +183,14 @@ export async function exportExpensesToExcel(
   COL_HEADERS.forEach((h, i) => {
     const cell = ws.getRow(HDR_ROW).getCell(i + 1)
     cell.value = `${h.ru}\n${h.en}`
-    cell.font  = font({ bold: true, size: 8.5, color: C_WHITE, wrapText: true })
+    cell.font  = font({ bold: true, size: 8.5, color: C_WHITE })
     cell.fill  = solid(C_HEADER)
     cell.alignment = { horizontal: h.align as ExcelJS.Alignment['horizontal'], vertical: 'middle', wrapText: true }
     cell.border = {
-      top:    { style: 'thin',   color: { argb: 'FF475569' } },
-      bottom: { style: 'medium', color: C_ACCENT },
-      left:   { style: 'thin',   color: { argb: 'FF475569' } },
-      right:  { style: 'thin',   color: { argb: 'FF475569' } },
+      top:    { style: 'thin',   color: { argb: 'FF475569' } as ExcelJS.Color },
+      bottom: { style: 'medium', color: C_ACCENT as ExcelJS.Color },
+      left:   { style: 'thin',   color: { argb: 'FF475569' } as ExcelJS.Color },
+      right:  { style: 'thin',   color: { argb: 'FF475569' } as ExcelJS.Color },
     }
   })
 
