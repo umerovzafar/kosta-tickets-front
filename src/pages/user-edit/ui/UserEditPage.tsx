@@ -29,7 +29,7 @@ function saveRates(userId: number, rates: Rate[]) {
 
 type Project = { id: string; name: string; client: string; color: string }
 const MOCK_PROJECTS: Project[] = [
-  { id: 'p1',  name: 'ACWA Power',                       client: 'ACWA Power',           color: '#2563eb' },
+  { id: 'p1',  name: 'ACWA Power',                       client: 'ACWA Power',           color: '#4f46e5' },
   { id: 'p2',  name: 'ACWA Power Sirdarya',               client: 'ACWA Power Sirdarya',  color: '#7c3aed' },
   { id: 'p3',  name: 'AGRI SOLAR SPV',                    client: 'AGRI SOLAR SPV',       color: '#0891b2' },
   { id: 'p4',  name: 'AKA Bank',                          client: 'AKA Bank',             color: '#b45309' },

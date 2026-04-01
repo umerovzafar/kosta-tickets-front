@@ -8,7 +8,7 @@ type ExpensesAccessRouteProps = {
   children: ReactNode
 }
 
-/** Доступ к разделу расходов — партнёры, администраторы (в т.ч. главный), IT отдел */
+/** Доступ к разделу расходов — любой пользователь с ролью (см. canAccessExpensesSection). */
 export function ExpensesAccessRoute({ children }: ExpensesAccessRouteProps) {
   const { user, loading } = useCurrentUser()
 

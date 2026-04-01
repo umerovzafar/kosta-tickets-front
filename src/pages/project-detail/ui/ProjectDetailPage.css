@@ -126,7 +126,7 @@
   white-space: nowrap;
 }
 .pdp__edit-btn svg { width: 13px; height: 13px; }
-.pdp__edit-btn:hover { border-color: var(--app-accent, #2563eb); color: var(--app-accent, #2563eb); background: var(--app-bg, #f9fafb); }
+.pdp__edit-btn:hover { border-color: var(--app-accent, #4f46e5); color: var(--app-accent, #4f46e5); background: var(--app-bg, #f9fafb); }
 
 .pdp__actions-wrap { position: relative; }
 
@@ -148,7 +148,7 @@
 }
 .pdp__actions-btn svg { width: 13px; height: 13px; color: var(--app-muted, #9ca3af); }
 .pdp__actions-btn:hover,
-.pdp__actions-btn--open { border-color: var(--app-accent, #2563eb); }
+.pdp__actions-btn--open { border-color: var(--app-accent, #4f46e5); }
 
 .pdp__actions-menu {
   position: absolute;
@@ -219,10 +219,10 @@
   transition: border-color 0.14s, color 0.14s, background 0.14s;
 }
 .pdp__chart-tab svg { width: 13px; height: 13px; }
-.pdp__chart-tab:hover { border-color: var(--app-accent, #2563eb); color: var(--app-accent, #2563eb); }
+.pdp__chart-tab:hover { border-color: var(--app-accent, #4f46e5); color: var(--app-accent, #4f46e5); }
 .pdp__chart-tab--active {
-  border-color: var(--app-accent, #2563eb);
-  color: var(--app-accent, #2563eb);
+  border-color: var(--app-accent, #4f46e5);
+  color: var(--app-accent, #4f46e5);
   background: rgba(37,99,235,0.06);
   font-weight: 600;
 }
@@ -371,7 +371,7 @@
   overflow: hidden;
 }
 .pdp__budget-bar-fill { height: 100%; transition: width 0.5s ease; }
-.pdp__budget-bar-fill--blue { background: #3b82f6; }
+.pdp__budget-bar-fill--blue { background: #4f46e5; }
 .pdp__budget-bar-fill--red  { background: #ef4444; }
 
 .pdp__stat-hint {
@@ -462,7 +462,7 @@
 .pdp__tasks-filter-btn svg,
 .pdp__tasks-export-btn svg { width: 13px; height: 13px; color: var(--app-muted, #9ca3af); }
 .pdp__tasks-filter-btn:hover,
-.pdp__tasks-export-btn:hover { border-color: var(--app-accent, #2563eb); }
+.pdp__tasks-export-btn:hover { border-color: var(--app-accent, #4f46e5); }
 
 .pdp__tasks-table {
   width: 100%;
@@ -542,7 +542,7 @@
 }
 .pdp__tasks-expand svg { width: 13px; height: 13px; }
 .pdp__tasks-expand:hover { color: var(--app-text, #374151); }
-.pdp__tasks-expand--open { transform: rotate(90deg); color: var(--app-accent, #2563eb); }
+.pdp__tasks-expand--open { transform: rotate(90deg); color: var(--app-accent, #4f46e5); }
 .pdp__tasks-expand-placeholder { width: 18px; flex-shrink: 0; }
 
 .pdp__tasks-hours-link {
@@ -551,7 +551,7 @@
   font-family: inherit;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--app-accent, #2563eb);
+  color: var(--app-accent, #4f46e5);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
   padding: 0;
@@ -602,7 +602,7 @@
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--app-accent, #2563eb);
+  color: var(--app-accent, #4f46e5);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;

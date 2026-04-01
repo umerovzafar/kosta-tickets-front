@@ -39,7 +39,7 @@
 
 .app-splash__progress-fill {
   fill: none;
-  stroke: #2563eb;
+  stroke: #4f46e5;
   stroke-width: 3;
   stroke-linecap: round;
   transition: stroke-dasharray 0.08s ease-out;
@@ -53,6 +53,6 @@
   justify-content: center;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #2563eb;
+  color: #4f46e5;
 }
 

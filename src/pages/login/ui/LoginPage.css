@@ -3,7 +3,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background: #f3f6fb;
   position: relative;
   overflow: hidden;
   padding: 1.5rem;
@@ -17,11 +17,7 @@
 }
 
 .lp__mesh {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 60% at 70% 10%, rgba(59, 130, 246, 0.08) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 10% 80%, rgba(99, 102, 241, 0.06) 0%, transparent 60%);
+  display: none;
 }
 
 .lp__form-panel {
@@ -34,24 +30,33 @@
 .lp__card {
   position: relative;
   padding: 2.75rem 2.5rem;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 24px;
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    0 24px 48px rgba(0, 0, 0, 0.08);
+    0 1px 3px rgba(15, 23, 42, 0.06),
+    0 12px 28px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(8px);
   overflow: hidden;
 }
 
 .lp__card-glow {
+  display: none;
+}
+
+.lp__badge {
   position: absolute;
-  top: -60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 280px;
-  height: 120px;
-  background: radial-gradient(ellipse, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
-  pointer-events: none;
+  top: 1rem;
+  right: 1rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  background: rgba(219, 234, 254, 0.9);
 }
 
 .lp__card-header {
@@ -66,11 +71,11 @@
   width: 60px;
   height: 60px;
   border-radius: 18px;
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  background: linear-gradient(135deg, #4f46e5, #4f46e5);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.35);
   margin-bottom: 0.5rem;
   color: #fff;
 }
@@ -98,7 +103,7 @@
 }
 
 .lp__card-sub strong {
-  color: #475569;
+  color: #334155;
   font-weight: 600;
 }
 
@@ -136,7 +141,7 @@
   font-size: 1rem;
   font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #4f46e5 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #1d4ed8 45%, #0ea5e9 100%);
   border: none;
   border-radius: 14px;
   cursor: pointer;
@@ -144,7 +149,7 @@
   transition: transform 0.18s ease, box-shadow 0.2s ease, opacity 0.15s;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.2) inset,
-    0 4px 16px rgba(37, 99, 235, 0.4);
+    0 8px 22px rgba(79, 70, 229, 0.42);
   letter-spacing: 0.01em;
 }
 
@@ -171,7 +176,7 @@
   transform: translateY(-2px);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.2) inset,
-    0 8px 24px rgba(37, 99, 235, 0.5);
+    0 12px 30px rgba(79, 70, 229, 0.56);
 }
 
 .lp__btn:active:not(:disabled) {
@@ -222,7 +227,7 @@
 }
 
 .lp__card-link {
-  color: #2563eb;
+  color: #4f46e5;
   text-decoration: none;
   font-weight: 500;
   transition: color 0.15s;

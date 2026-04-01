@@ -62,9 +62,9 @@ type TimeEntry = {
 }
 
 const MOCK_ENTRIES: TimeEntry[] = [
-  { id: 'te1', date: formatDate(addDays(startOfWeek(new Date()), 0)), project: 'Дело №2024-118', client: 'ООО Альфа',  task: 'Анализ документов', notes: 'Изучение материалов дела', hours: 2.5,  billable: true,  color: '#2563eb' },
+  { id: 'te1', date: formatDate(addDays(startOfWeek(new Date()), 0)), project: 'Дело №2024-118', client: 'ООО Альфа',  task: 'Анализ документов', notes: 'Изучение материалов дела', hours: 2.5,  billable: true,  color: '#4f46e5' },
   { id: 'te2', date: formatDate(addDays(startOfWeek(new Date()), 0)), project: 'Контракт KL-42',  client: 'ООО Бета',   task: 'Совещания',          notes: 'Встреча с клиентом',     hours: 1.0,  billable: true,  color: '#7c3aed' },
-  { id: 'te3', date: formatDate(addDays(startOfWeek(new Date()), 1)), project: 'Дело №2024-118', client: 'ООО Альфа',  task: 'Составление',        notes: 'Проект договора',        hours: 3.25, billable: true,  color: '#2563eb' },
+  { id: 'te3', date: formatDate(addDays(startOfWeek(new Date()), 1)), project: 'Дело №2024-118', client: 'ООО Альфа',  task: 'Составление',        notes: 'Проект договора',        hours: 3.25, billable: true,  color: '#4f46e5' },
   { id: 'te4', date: formatDate(addDays(startOfWeek(new Date()), 2)), project: 'Контракт KL-42',  client: 'ООО Бета',   task: 'Исследование',       notes: 'Правовой анализ',        hours: 2.0,  billable: true,  color: '#7c3aed' },
   { id: 'te5', date: formatDate(addDays(startOfWeek(new Date()), 2)), project: 'Общие расходы',   client: 'Внутренний', task: 'Административное',   notes: '',                       hours: 0.5,  billable: false, color: '#64748b' },
   { id: 'te6', date: formatDate(addDays(startOfWeek(new Date()), 3)), project: 'Дело №2024-98',  client: 'ООО Альфа',  task: 'Судебное заседание',  notes: 'Предварительное слушание', hours: 4.0, billable: true,  color: '#0891b2' },
@@ -75,7 +75,7 @@ function formatDate(d: Date): string {
 }
 
 const FORM_PROJECTS = [
-  { id: 'p1', name: 'Дело №2024-118', client: 'ООО Альфа',  color: '#2563eb' },
+  { id: 'p1', name: 'Дело №2024-118', client: 'ООО Альфа',  color: '#4f46e5' },
   { id: 'p2', name: 'Дело №2024-98',  client: 'ООО Альфа',  color: '#0891b2' },
   { id: 'p3', name: 'Контракт KL-42', client: 'ООО Бета',   color: '#7c3aed' },
   { id: 'p4', name: 'Общие расходы',  client: 'Внутренний', color: '#64748b' },

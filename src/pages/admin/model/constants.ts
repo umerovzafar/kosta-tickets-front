@@ -37,7 +37,7 @@ export const TT_POSITIONS = [
 export type TTPosition = (typeof TT_POSITIONS)[number]
 
 export const TT_POSITION_META: Record<TTPosition, { color: string; bg: string; border: string }> = {
-  'Associate':         { color: '#2563eb', bg: 'rgba(37,99,235,0.1)',   border: 'rgba(37,99,235,0.25)'   },
+  'Associate':         { color: '#4f46e5', bg: 'rgba(37,99,235,0.1)',   border: 'rgba(37,99,235,0.25)'   },
   'Contracts Manager': { color: '#7c3aed', bg: 'rgba(124,58,237,0.1)', border: 'rgba(124,58,237,0.25)'  },
   'Counsel':           { color: '#0891b2', bg: 'rgba(8,145,178,0.1)',  border: 'rgba(8,145,178,0.25)'   },
   'Junior Associate':  { color: '#64748b', bg: 'rgba(100,116,139,0.1)',border: 'rgba(100,116,139,0.25)' },

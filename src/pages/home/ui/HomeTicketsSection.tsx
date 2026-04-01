@@ -1,16 +1,8 @@
-import { memo } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatedLink } from '@shared/ui'
 import { getTicketDetailUrl } from '@shared/config'
 import type { Ticket } from '@entities/ticket'
 import type { StatusItem, PriorityItem } from '@entities/ticket'
-
-const IconPlus = memo(function IconPlus() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  )
-})
 
 const IconCheck = memo(function IconCheck() {
   return (
@@ -95,8 +87,43 @@ export const HomeTicketsSection = memo(function HomeTicketsSection(props: HomeTi
     formatDateShort,
     loadTickets,
     canCreateTicket,
-    onOpenCreateForm,
   } = props
+  const [isFilterTransition, setIsFilterTransition] = useState(false)
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firstRenderRef = useRef(true)
+
+  useEffect(() => {
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false
+      return
+    }
+    if (ticketsLoading || !!ticketsError || tickets.length === 0) return
+
+    setIsFilterTransition(true)
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current)
+    transitionTimerRef.current = setTimeout(() => {
+      setIsFilterTransition(false)
+      transitionTimerRef.current = null
+    }, 180)
+
+    return () => {
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current)
+        transitionTimerRef.current = null
+      }
+    }
+  }, [filterStatus, filterPriority, searchQuery, ticketsLoading, ticketsError, tickets.length])
+
+  const viewState = useMemo(() => {
+    if (isFilterTransition) return 'loading'
+    if (ticketsError) return 'error'
+    if (ticketsLoading) return 'loading'
+    if (tickets.length === 0) return 'empty'
+    if (filteredTickets.length === 0) return 'not-found'
+    return 'table'
+  }, [isFilterTransition, ticketsError, ticketsLoading, tickets.length, filteredTickets.length])
+
+  const contentKey = `${viewState}|${filterStatus}|${filterPriority}|${searchQuery}`
 
   return (
     <section className="home-tickets">
@@ -182,7 +209,7 @@ export const HomeTicketsSection = memo(function HomeTicketsSection(props: HomeTi
         </div>
 
         <div className="home-tickets__body">
-          {ticketsError && (
+          {viewState === 'error' && (
             <div className="home-tickets__state home-tickets__state--error">
               <span className="home-tickets__state-icon" aria-hidden>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -192,7 +219,7 @@ export const HomeTicketsSection = memo(function HomeTicketsSection(props: HomeTi
               <button type="button" className="home-tickets__btn-retry" onClick={() => loadTickets()}>Повторить</button>
             </div>
           )}
-          {!ticketsError && ticketsLoading && (
+          {viewState === 'loading' && (
             <div className="home-tickets__state home-tickets__state--loading">
               <div className="home-tickets__skeleton home-tickets__skeleton--head" />
               <div className="home-tickets__skeleton home-tickets__skeleton--line" />
@@ -200,29 +227,23 @@ export const HomeTicketsSection = memo(function HomeTicketsSection(props: HomeTi
               <div className="home-tickets__skeleton home-tickets__skeleton--line" />
             </div>
           )}
-          {!ticketsError && !ticketsLoading && tickets.length === 0 && (
+          {viewState === 'empty' && (
             <div className="home-tickets__state home-tickets__state--empty">
               <span className="home-tickets__state-icon" aria-hidden>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               </span>
               <p className="home-tickets__state-title">Заявок пока нет</p>
               <p className="home-tickets__state-desc">{canCreateTicket ? 'Создайте первую заявку' : 'У вас пока нет заявок'}</p>
-              {canCreateTicket && (
-                <button type="button" className="home-tickets__btn-create-inline" onClick={onOpenCreateForm}>
-                  <span className="home-tickets__btn-create-icon"><IconPlus /></span>
-                  Создать заявку
-                </button>
-              )}
             </div>
           )}
-          {!ticketsError && !ticketsLoading && tickets.length > 0 && filteredTickets.length === 0 && (
+          {viewState === 'not-found' && (
             <div className="home-tickets__state home-tickets__state--empty">
               <p className="home-tickets__state-title">Ничего не найдено</p>
               <p className="home-tickets__state-desc">Попробуйте изменить запрос</p>
             </div>
           )}
-          {!ticketsError && !ticketsLoading && filteredTickets.length > 0 && (
-            <div className="home-tickets__table">
+          {viewState === 'table' && (
+            <div key={contentKey} className="home-tickets__table home-tickets__table--animated">
               <div className="home-tickets__table-head">
                 <span className="home-tickets__th home-tickets__th--theme">Заявка</span>
                 <span className="home-tickets__th home-tickets__th--author">Автор</span>

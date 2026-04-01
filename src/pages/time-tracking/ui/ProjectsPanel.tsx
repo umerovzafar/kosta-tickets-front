@@ -27,7 +27,7 @@ const STATUS_DOT: Record<ProjectStatus, string> = {
   archived: '#94a3b8',
 }
 const TYPE_COLOR: Record<ProjectType, { color: string; bg: string }> = {
-  'Время и материалы':    { color: '#2563eb', bg: 'rgba(37,99,235,0.08)'  },
+  'Время и материалы':    { color: '#4f46e5', bg: 'rgba(37,99,235,0.08)'  },
   'Фиксированная ставка': { color: '#7c3aed', bg: 'rgba(124,58,237,0.08)' },
   'Без бюджета':          { color: '#64748b', bg: 'rgba(100,116,139,0.08)'},
 }

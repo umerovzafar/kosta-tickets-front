@@ -29,6 +29,7 @@ export function LoginPage() {
       <div className="lp__form-panel">
         <div className="lp__card">
           <div className="lp__card-glow" />
+          <div className="lp__badge">Kosta Legal</div>
 
           <div className="lp__card-header">
             <div className="lp__card-icon">
@@ -37,7 +38,7 @@ export function LoginPage() {
               </svg>
             </div>
             <h2 className="lp__card-title">Добро пожаловать</h2>
-            <p className="lp__card-sub">Войдите через корпоративный аккаунт<br/><strong>Microsoft 365</strong></p>
+            <p className="lp__card-sub">Войдите через корпоративный аккаунт <strong>Microsoft 365</strong></p>
           </div>
 
           {(error || statusMsg) && (

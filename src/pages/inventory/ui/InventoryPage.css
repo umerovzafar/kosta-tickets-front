@@ -255,7 +255,7 @@ body[data-theme='dark'] .inv__tab--active {
   height: 3px;
 }
 
-.inv__kpi-card--blue::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.inv__kpi-card--blue::before { background: linear-gradient(90deg, #4f46e5, #60a5fa); }
 .inv__kpi-card--green::before { background: linear-gradient(90deg, #22c55e, #4ade80); }
 .inv__kpi-card--cyan::before { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
 .inv__kpi-card--gray::before { background: linear-gradient(90deg, #94a3b8, #cbd5e1); }
@@ -274,7 +274,7 @@ body[data-theme='dark'] .inv__tab--active {
 
 .inv__kpi-icon svg { width: 16px; height: 16px; }
 
-.inv__kpi-card--blue .inv__kpi-icon { background: #eff6ff; color: #3b82f6; }
+.inv__kpi-card--blue .inv__kpi-icon { background: #eff6ff; color: #4f46e5; }
 .inv__kpi-card--green .inv__kpi-icon { background: #f0fdf4; color: #22c55e; }
 .inv__kpi-card--cyan .inv__kpi-icon { background: #ecfeff; color: #06b6d4; }
 .inv__kpi-card--gray .inv__kpi-icon { background: #f1f5f9; color: #64748b; }
@@ -747,7 +747,7 @@ body[data-theme='dark'] .inv__tab--active {
 
 .inv-sel__trigger--open {
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .inv-sel__value {
@@ -928,7 +928,7 @@ body[data-theme='dark'] .inv__tab--active {
 .inv__input:focus {
   outline: none;
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .inv__form-row {

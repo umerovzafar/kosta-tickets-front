@@ -172,7 +172,7 @@
   flex-shrink: 0;
 }
 .ts__cal-btn svg { width: 15px; height: 15px; }
-.ts__cal-btn:hover { border-color: var(--app-accent, #2563eb); color: var(--app-accent, #2563eb); }
+.ts__cal-btn:hover { border-color: var(--app-accent, #4f46e5); color: var(--app-accent, #4f46e5); }
 
 .ts__view-toggle {
   display: flex;
@@ -222,7 +222,7 @@
   transition: background 0.12s;
   position: relative;
 }
-.ts__day-col:hover { background: color-mix(in srgb, var(--app-accent, #2563eb) 4%, transparent); }
+.ts__day-col:hover { background: color-mix(in srgb, var(--app-accent, #4f46e5) 4%, transparent); }
 
 .ts__day-col--today .ts__day-name,
 .ts__day-col--today .ts__day-num { color: #e55a2b; font-weight: 700; }
@@ -248,7 +248,7 @@
   font-variant-numeric: tabular-nums;
   margin-top: 0.125rem;
 }
-.ts__day-hours--filled { color: var(--app-accent, #2563eb); font-weight: 600; }
+.ts__day-hours--filled { color: var(--app-accent, #4f46e5); font-weight: 600; }
 
 .ts__day-indicator {
   position: absolute;

@@ -109,56 +109,58 @@ export function RulesPage() {
         </header>
 
         <div className="rules-page__content">
-          {loading ? (
-            <>
-              <div className="rules-page__hero rules-page__hero--skeleton">
-                <div className="rules-page__skel rules-page__skel--icon" />
-                <div className="rules-page__skel rules-page__skel--title" />
-                <div className="rules-page__skel rules-page__skel--text" />
-              </div>
-              <div className="rules-page__grid">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="rules-page__card rules-page__card--skeleton">
-                    <div className="rules-page__skel rules-page__skel--card-icon" />
-                    <div className="rules-page__skel rules-page__skel--card-title" />
-                    <div className="rules-page__skel rules-page__skel--card-line" />
-                    <div className="rules-page__skel rules-page__skel--card-line rules-page__skel--short" />
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="rules-page__hero">
-                <div className="rules-page__hero-icon">
-                  <IconFileText />
+          <div className="rules-page__container">
+            {loading ? (
+              <>
+                <div className="rules-page__hero rules-page__hero--skeleton">
+                  <div className="rules-page__skel rules-page__skel--icon" />
+                  <div className="rules-page__skel rules-page__skel--title" />
+                  <div className="rules-page__skel rules-page__skel--text" />
                 </div>
-                <h2 className="rules-page__hero-title">Правила создания тикетов</h2>
-                <p className="rules-page__hero-text">
-                  Следуйте этим правилам при создании и оформлении тикетов для быстрой обработки обращений.
-                </p>
-              </div>
+                <div className="rules-page__grid">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="rules-page__card rules-page__card--skeleton">
+                      <div className="rules-page__skel rules-page__skel--card-icon" />
+                      <div className="rules-page__skel rules-page__skel--card-title" />
+                      <div className="rules-page__skel rules-page__skel--card-line" />
+                      <div className="rules-page__skel rules-page__skel--card-line rules-page__skel--short" />
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rules-page__hero">
+                  <div className="rules-page__hero-icon">
+                    <IconFileText />
+                  </div>
+                  <h2 className="rules-page__hero-title">Правила создания тикетов</h2>
+                  <p className="rules-page__hero-text">
+                    Следуйте этим правилам при создании и оформлении тикетов для быстрой обработки обращений.
+                  </p>
+                </div>
 
-              <div className="rules-page__grid">
-                {rulesSections.map((section, i) => {
-                  const Icon = section.icon
-                  return (
-                    <article
-                      key={section.id}
-                      className={`rules-page__card rules-page__card--${section.color}`}
-                      style={{ animationDelay: `${i * 0.05}s` }}
-                    >
-                      <div className="rules-page__card-icon">
-                        <Icon />
-                      </div>
-                      <h3 className="rules-page__card-title">{section.title}</h3>
-                      <div className="rules-page__card-body">{section.content}</div>
-                    </article>
-                  )
-                })}
-              </div>
-            </>
-          )}
+                <div className="rules-page__grid">
+                  {rulesSections.map((section, i) => {
+                    const Icon = section.icon
+                    return (
+                      <article
+                        key={section.id}
+                        className={`rules-page__card rules-page__card--${section.color}`}
+                        style={{ animationDelay: `${i * 0.05}s` }}
+                      >
+                        <div className="rules-page__card-icon">
+                          <Icon />
+                        </div>
+                        <h3 className="rules-page__card-title">{section.title}</h3>
+                        <div className="rules-page__card-body">{section.content}</div>
+                      </article>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </main>
     </div>

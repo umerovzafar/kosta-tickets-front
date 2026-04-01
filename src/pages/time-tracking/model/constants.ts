@@ -10,7 +10,7 @@ export const TABS: { id: TimeTabId; label: string }[] = [
 ]
 
 export const EXPENSE_CATEGORY_META: Record<string, { color: string; bg: string }> = {
-  'Транспорт':         { color: '#2563eb', bg: 'rgba(37,99,235,0.08)'   },
+  'Транспорт':         { color: '#4f46e5', bg: 'rgba(37,99,235,0.08)'   },
   'Питание':           { color: '#16a34a', bg: 'rgba(22,163,74,0.08)'   },
   'Командировка':      { color: '#b45309', bg: 'rgba(180,83,9,0.08)'    },
   'Офис':              { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
@@ -40,7 +40,7 @@ export const TIME_TRACKING_ROLES = [
 export type TimeTrackingRole = typeof TIME_TRACKING_ROLES[number]
 
 export const TIME_TRACKING_ROLE_META: Record<TimeTrackingRole, { color: string; bg: string }> = {
-  'Associate': { color: '#2563eb', bg: 'rgba(37,99,235,0.08)' },
+  'Associate': { color: '#4f46e5', bg: 'rgba(37,99,235,0.08)' },
   'Contracts Manager': { color: '#7c3aed', bg: 'rgba(124,58,237,0.08)' },
   'Counsel': { color: '#0891b2', bg: 'rgba(8,145,178,0.08)' },
   'Junior Associate': { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },

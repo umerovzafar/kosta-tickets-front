@@ -318,7 +318,7 @@ body[data-theme='dark'] .att__alert--muted {
   height: 2px;
 }
 
-.att__kpi-card--blue::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.att__kpi-card--blue::before { background: linear-gradient(90deg, #4f46e5, #60a5fa); }
 .att__kpi-card--orange::before { background: linear-gradient(90deg, #f97316, #fb923c); }
 .att__kpi-card--violet::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
 .att__kpi-card--green::before { background: linear-gradient(90deg, #22c55e, #4ade80); }
@@ -343,7 +343,7 @@ body[data-theme='dark'] .att__alert--muted {
   height: 16px;
 }
 
-.att__kpi-card--blue .att__kpi-icon { background: #eff6ff; color: #3b82f6; }
+.att__kpi-card--blue .att__kpi-icon { background: #eff6ff; color: #4f46e5; }
 .att__kpi-card--orange .att__kpi-icon { background: #fff7ed; color: #f97316; }
 .att__kpi-card--violet .att__kpi-icon { background: #f5f3ff; color: #8b5cf6; }
 .att__kpi-card--green .att__kpi-icon { background: #f0fdf4; color: #22c55e; }
@@ -506,7 +506,7 @@ body[data-theme='dark'] .att__alert--muted {
 .att__search:focus {
   outline: none;
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .att__field-label {
@@ -824,7 +824,7 @@ body[data-theme='dark'] .att__arrival-badge--absent {
 .att-dp__trigger:focus-visible {
   outline: none;
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .att-dp__val {
@@ -983,7 +983,7 @@ body[data-theme='dark'] .att__arrival-badge--absent {
 
 .att-sel__trigger--open {
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .att-sel__value {
@@ -1150,7 +1150,7 @@ body[data-theme='dark'] .att__arrival-badge--absent {
   height: 36px;
   border-radius: 10px;
   background: #eff6ff;
-  color: #3b82f6;
+  color: #4f46e5;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1239,7 +1239,7 @@ body[data-theme='dark'] .att__arrival-badge--absent {
 
 .att-modal__input:focus {
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .att-modal__hint {

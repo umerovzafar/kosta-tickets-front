@@ -292,7 +292,7 @@
   height: 2px;
 }
 
-.ap__kpi-card--blue::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.ap__kpi-card--blue::before { background: linear-gradient(90deg, #4f46e5, #60a5fa); }
 .ap__kpi-card--orange::before { background: linear-gradient(90deg, #f97316, #fb923c); }
 .ap__kpi-card--green::before { background: linear-gradient(90deg, #22c55e, #4ade80); }
 .ap__kpi-card--violet::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
@@ -317,14 +317,14 @@
   height: 16px;
 }
 
-.ap__kpi-card--blue .ap__kpi-icon { background: #eff6ff; color: #3b82f6; }
+.ap__kpi-card--blue .ap__kpi-icon { background: #eff6ff; color: #4f46e5; }
 .ap__kpi-card--orange .ap__kpi-icon { background: #fff7ed; color: #f97316; }
 .ap__kpi-card--green .ap__kpi-icon { background: #f0fdf4; color: #22c55e; }
 .ap__kpi-card--violet .ap__kpi-icon { background: #f5f3ff; color: #8b5cf6; }
 
 /* Тёмная тема: тёмный «колодец» под иконку и светлый stroke — как на главной (home-stats) */
 body[data-theme='dark'] .ap__kpi-card--blue .ap__kpi-icon {
-  background: rgba(59, 130, 246, 0.18);
+  background: rgba(79, 70, 229, 0.18);
   color: #93c5fd;
 }
 body[data-theme='dark'] .ap__kpi-card--orange .ap__kpi-icon {
@@ -567,7 +567,7 @@ body[data-theme='dark'] .ap__kpi-card--violet .ap__kpi-icon {
 .ap__search:focus {
   outline: none;
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .ap__switch-label {
@@ -635,7 +635,7 @@ body[data-theme='dark'] .ap__kpi-card--violet .ap__kpi-icon {
   box-shadow: var(--ticket-card-shadow-hover);
 }
 
-.ap__ticket-card--open { border-left: 3px solid #3b82f6; }
+.ap__ticket-card--open { border-left: 3px solid #4f46e5; }
 .ap__ticket-card--done { border-left: 3px solid #22c55e; }
 .ap__ticket-card--cancel { border-left: 3px solid #dc2626; }
 
@@ -1044,7 +1044,7 @@ body[data-theme='dark'] .ap__kpi-card--violet .ap__kpi-icon {
 
 .ap__role-trigger--open {
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .ap__role-trigger--disabled {
@@ -1590,7 +1590,7 @@ body[data-theme='dark'] .ap__kpi-card--violet .ap__kpi-icon {
 
 .ap-sel__trigger--open {
   border-color: var(--app-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .ap-sel__value {

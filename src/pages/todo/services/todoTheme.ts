@@ -186,18 +186,18 @@ export async function deriveThemeFromImage(imageUrl: string): Promise<ThemeVars>
   const text = isDark ? '#f1f5f9' : '#0f172a'
   const muted = isDark ? 'rgba(226,232,240,0.88)' : 'rgba(15,23,42,0.62)'
   const surface = isDark
-    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.118, 0.76)
-    : 'rgba(240,241,243,0.88)'
+    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.118, 0.86)
+    : 'rgba(240,241,243,0.94)'
   const surface2 = isDark
-    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.096, 0.82)
-    : 'rgba(232,234,237,0.9)'
+    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.096, 0.9)
+    : 'rgba(232,234,237,0.96)'
   const panelBg = isDark ? '#1e293b' : '#ffffff'
   const border = isDark ? 'rgba(148,163,184,0.58)' : 'rgba(148,163,184,0.38)'
   const shadow = isDark ? '0 14px 34px rgba(0,0,0,0.52)' : '0 14px 34px rgba(15,23,42,0.18)'
   const navShadow = isDark ? '0 8px 22px rgba(0,0,0,0.48)' : '0 8px 18px rgba(15,23,42,0.12)'
   const headerBg = isDark
-    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.078, 0.9)
-    : 'rgba(238,240,243,0.88)'
+    ? darkChromeFromPhotoHue(avgR, avgG, avgB, 0.078, 0.94)
+    : 'rgba(238,240,243,0.95)'
   const columns = deriveColumnColors(accent)
 
   return { isDark, accent, text, muted, surface, surface2, panelBg, border, shadow, headerBg, navShadow, ...columns }

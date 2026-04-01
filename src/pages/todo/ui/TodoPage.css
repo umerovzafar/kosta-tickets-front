@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden !important;
-  --todo-accent: #2563eb;
+  --todo-accent: #4f46e5;
   --todo-text: #0f172a;
   --todo-muted: rgba(15, 23, 42, 0.58);
   --todo-surface: rgba(249, 250, 251, 0.82);
@@ -12,7 +12,7 @@
   --todo-border: rgba(148, 163, 184, 0.32);
   --todo-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
   --todo-header-bg: rgba(249, 250, 251, 0.78);
-  --todo-nav-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  --todo-nav-shadow: none;
   --todo-panel-bg: #ffffff;
   background: #f3f4f6;
   color: var(--todo-text);
@@ -94,9 +94,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
   border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
   animation: todoLogoPulse 1.4s ease-in-out infinite;
 }
 
@@ -107,8 +107,8 @@
 }
 
 @keyframes todoLogoPulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25); }
-  50% { transform: scale(1.08); box-shadow: 0 12px 32px rgba(37, 99, 235, 0.35); }
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25); }
+  50% { transform: scale(1.08); box-shadow: 0 12px 32px rgba(79, 70, 229, 0.35); }
 }
 
 .todo-page__loading-dots {
@@ -120,7 +120,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--todo-accent, #2563eb);
+  background: var(--todo-accent, #4f46e5);
   opacity: 0.3;
   animation: todoLoadDot 1.2s ease-in-out infinite;
 }
@@ -150,8 +150,8 @@
   display: flex;
   align-items: center;
   background: var(--todo-header-bg, var(--todo-surface2));
-  border-bottom: 1px solid var(--todo-border);
-  box-shadow: var(--todo-nav-shadow);
+  border-bottom: none;
+  box-shadow: none;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
@@ -430,7 +430,7 @@
   min-width: 280px;
   max-width: 100%;
   flex-shrink: 0;
-  border-right: 1px solid color-mix(in srgb, var(--todo-border) 220%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--todo-border) 170%, transparent);
   /* Как у .todo-page__header: тот же «стекло» и размытие, без отдельного оттенка surface2 */
   background: var(--todo-header-bg, var(--todo-surface2));
   backdrop-filter: blur(14px);
@@ -1083,7 +1083,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--todo-text) 35%, transparent);
   backdrop-filter: blur(6px);
   animation: tcm-panel-in 0.15s ease-out;
 }
@@ -1091,7 +1091,7 @@
 .cal-event-modal {
   width: 100%;
   max-width: 420px;
-  background: var(--app-surface, #fff);
+  background: var(--todo-panel-bg, #fff);
   border-radius: 18px;
   padding: 1.5rem;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
@@ -1111,7 +1111,7 @@
   margin: 0;
   font-size: 1.125rem;
   font-weight: 700;
-  color: var(--app-text, #0f172a);
+  color: var(--todo-text, #0f172a);
 }
 
 .cal-event-modal__close {
@@ -1119,8 +1119,8 @@
   height: 32px;
   border: none;
   border-radius: 8px;
-  background: var(--app-surface-soft, #f1f5f9);
-  color: var(--app-muted, #64748b);
+  background: var(--todo-surface, #f1f5f9);
+  color: var(--todo-muted, #64748b);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1129,7 +1129,7 @@
 }
 
 .cal-event-modal__close:hover {
-  background: var(--app-border, #e2e8f0);
+  background: var(--todo-border, #e2e8f0);
 }
 
 .cal-event-modal__field {
@@ -1147,25 +1147,25 @@
 .cal-event-modal__label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--app-meta, #94a3b8);
+  color: var(--todo-muted, #94a3b8);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .cal-event-modal__input {
   padding: 0.5rem 0.75rem;
-  border: 1.5px solid var(--app-border, #e2e8f0);
+  border: 1.5px solid var(--todo-border, #e2e8f0);
   border-radius: 10px;
-  background: var(--app-surface, #fff);
-  color: var(--app-text, #0f172a);
+  background: var(--todo-surface2, #fff);
+  color: var(--todo-text, #0f172a);
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .cal-event-modal__input:focus {
-  border-color: var(--app-accent, #2563eb);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent, #2563eb) 15%, transparent);
+  border-color: var(--todo-accent, #4f46e5);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--todo-accent, #4f46e5) 15%, transparent);
 }
 
 .cal-event-modal__textarea {
@@ -1199,16 +1199,16 @@
 }
 
 .cal-event-modal__btn--cancel {
-  background: var(--app-surface-soft, #f1f5f9);
-  color: var(--app-muted, #64748b);
+  background: var(--todo-surface, #f1f5f9);
+  color: var(--todo-muted, #64748b);
 }
 
 .cal-event-modal__btn--cancel:hover {
-  background: var(--app-border, #e2e8f0);
+  background: var(--todo-border, #e2e8f0);
 }
 
 .cal-event-modal__btn--save {
-  background: var(--app-accent, #2563eb);
+  background: var(--todo-accent, #4f46e5);
   color: #fff;
 }
 
@@ -2100,8 +2100,8 @@
 }
 
 .todo-add-card-modal__input:focus {
-  border-color: var(--todo-accent, #2563eb);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--todo-accent, #2563eb) 20%, transparent);
+  border-color: var(--todo-accent, #4f46e5);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--todo-accent, #4f46e5) 20%, transparent);
 }
 
 .todo-add-card-modal__footer {
@@ -2115,7 +2115,7 @@
   font-size: 0.875rem;
   font-weight: 600;
   color: #fff;
-  background: var(--todo-accent, #2563eb);
+  background: var(--todo-accent, #4f46e5);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -2123,7 +2123,7 @@
 }
 
 .todo-add-card-modal__submit:hover {
-  background: color-mix(in srgb, var(--todo-accent, #2563eb) 85%, black);
+  background: color-mix(in srgb, var(--todo-accent, #4f46e5) 85%, black);
 }
 
 .todo-add-card-modal__submit:active {
@@ -3251,7 +3251,7 @@
   font-size: 0.625rem;
   font-weight: 700;
   color: #1d4ed8;
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(79, 70, 229, 0.15);
   padding: 0.2rem 0.4rem;
   border-radius: 4px;
 }
@@ -3395,7 +3395,7 @@
   padding: 2px 0.45rem 2px 0.35rem;
   font-size: 0.5625rem;
   font-weight: 700;
-  color: #3b82f6;
+  color: #4f46e5;
   background: rgba(59,130,246,.10);
   border-radius: 5px;
   letter-spacing: 0.03em;
@@ -3406,7 +3406,7 @@
 .todo-card__cal-badge svg {
   width: 12px;
   height: 12px;
-  stroke: #3b82f6;
+  stroke: #4f46e5;
   flex-shrink: 0;
 }
 

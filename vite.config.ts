@@ -4,6 +4,9 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    global: 'globalThis',
+  },
   resolve: {
     alias: {
       '@app': path.resolve(__dirname, './src/app'),
@@ -12,6 +15,7 @@ export default defineConfig({
       '@features': path.resolve(__dirname, './src/features'),
       '@entities': path.resolve(__dirname, './src/entities'),
       '@shared': path.resolve(__dirname, './src/shared'),
+      buffer: 'buffer',
     },
   },
   server: {

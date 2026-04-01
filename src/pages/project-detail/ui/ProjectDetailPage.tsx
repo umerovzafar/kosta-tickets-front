@@ -159,7 +159,7 @@ function CustomBar(props: {
   const { x = 0, y = 0, width = 0, height = 0, isThisWeek } = props
   return (
     <rect x={x} y={y} width={width} height={height} rx={3} ry={3}
-      fill={isThisWeek ? '#2563eb' : '#93c5fd'} />
+      fill={isThisWeek ? '#4f46e5' : '#93c5fd'} />
   )
 }
 
@@ -408,7 +408,7 @@ function TasksPanel({ rows, nonBillableRows, totalHours, totalAmt, currency }: {
 }
 
 const TYPE_COLOR: Record<string, { color: string; bg: string }> = {
-  'Время и материалы':    { color: '#2563eb', bg: 'rgba(37,99,235,0.08)'  },
+  'Время и материалы':    { color: '#4f46e5', bg: 'rgba(37,99,235,0.08)'  },
   'Фиксированная ставка': { color: '#7c3aed', bg: 'rgba(124,58,237,0.08)' },
   'Без бюджета':          { color: '#64748b', bg: 'rgba(100,116,139,0.08)'},
 }

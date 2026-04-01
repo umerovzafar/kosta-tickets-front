@@ -236,7 +236,7 @@ export function ReportsPanel() {
                 cy="18"
                 r="15.9"
                 fill="none"
-                stroke="var(--app-accent, #2563eb)"
+                stroke="var(--app-accent, #4f46e5)"
                 strokeWidth="3"
                 strokeDasharray={`${animBillablePct} ${100 - animBillablePct}`}
                 strokeDashoffset="0"

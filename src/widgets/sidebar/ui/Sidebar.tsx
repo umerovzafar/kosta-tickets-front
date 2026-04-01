@@ -92,6 +92,7 @@ export function Sidebar({
         item.label === 'Главная' ||
         item.label === 'Учёт времени' ||
         item.label === 'Список дел' ||
+        item.label === 'Расходы' ||
         item.label === 'Правила' ||
         item.label === 'Помощь',
     )

@@ -146,73 +146,74 @@ export function HelpPage() {
           <div className="help-page__header-inner">
             <div>
               <h1 className="help-page__title">Помощь</h1>
-              <p className="help-page__subtitle">FAQ по офисным задачам и технической поддержке</p>
             </div>
           </div>
         </header>
 
         <div className="help-page__content">
-          {loading ? (
-            <>
-              <div className="help-page__hero help-page__hero--skeleton">
-                <div className="help-page__skel help-page__skel--icon" />
-                <div className="help-page__skel help-page__skel--title" />
-                <div className="help-page__skel help-page__skel--text" />
-              </div>
-              <div className="help-page__grid">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="help-page__card help-page__card--skeleton">
-                    <div className="help-page__skel help-page__skel--card-icon" />
-                    <div className="help-page__skel help-page__skel--card-title" />
-                    <div className="help-page__skel help-page__skel--card-line" />
-                    <div className="help-page__skel help-page__skel--card-line help-page__skel--short" />
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="help-page__hero">
-                <div className="help-page__hero-icon">
-                  <IconHelp />
+          <div className="help-page__container">
+            {loading ? (
+              <>
+                <div className="help-page__hero help-page__hero--skeleton">
+                  <div className="help-page__skel help-page__skel--icon" />
+                  <div className="help-page__skel help-page__skel--title" />
+                  <div className="help-page__skel help-page__skel--text" />
                 </div>
-                <h2 className="help-page__hero-title">Как мы можем помочь?</h2>
-                <p className="help-page__hero-text">
-                  Ответы на частые вопросы по офисным задачам: подключение принтера, Wi‑Fi, второго монитора и другое. Не нашли ответ — создайте тикет.
-                </p>
-              </div>
-
-              <section className="help-page__faq" aria-label="Часто задаваемые вопросы">
-                <h2 className="help-page__faq-heading">Офисные задачи</h2>
                 <div className="help-page__grid">
-                  {faqItems.map((item, i) => {
-                    const Icon = item.icon
-                    return (
-                      <article
-                        key={item.id}
-                        className={`help-page__card help-page__card--${item.color}`}
-                        style={{ animationDelay: `${i * 0.05}s` }}
-                      >
-                        <div className="help-page__card-icon">
-                          <Icon />
-                        </div>
-                        <div className="help-page__card-q">Вопрос</div>
-                        <h3 className="help-page__card-title">{item.question}</h3>
-                        <div className="help-page__card-a">Ответ</div>
-                        {item.mailto ? (
-                          <a href={`mailto:${item.mailto}`} className="help-page__card-email">
-                            {item.mailto}
-                          </a>
-                        ) : (
-                          <p className="help-page__card-text">{item.answer}</p>
-                        )}
-                      </article>
-                    )
-                  })}
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="help-page__card help-page__card--skeleton">
+                      <div className="help-page__skel help-page__skel--card-icon" />
+                      <div className="help-page__skel help-page__skel--card-title" />
+                      <div className="help-page__skel help-page__skel--card-line" />
+                      <div className="help-page__skel help-page__skel--card-line help-page__skel--short" />
+                    </div>
+                  ))}
                 </div>
-              </section>
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                <div className="help-page__hero">
+                  <div className="help-page__hero-icon">
+                    <IconHelp />
+                  </div>
+                  <h2 className="help-page__hero-title">Как мы можем помочь?</h2>
+                  <p className="help-page__hero-text">
+                    Ответы на частые вопросы по офисным задачам: подключение принтера, Wi‑Fi, второго монитора и другое. Не нашли ответ — создайте тикет.
+                  </p>
+                </div>
+
+                <section className="help-page__faq" aria-label="Часто задаваемые вопросы">
+                  <h2 className="help-page__faq-heading">Офисные задачи</h2>
+                  <div className="help-page__grid">
+                    {faqItems.map((item, i) => {
+                      const Icon = item.icon
+                      return (
+                        <article
+                          key={item.id}
+                          className={`help-page__card help-page__card--${item.color}`}
+                          style={{ animationDelay: `${i * 0.05}s` }}
+                        >
+                          <div className="help-page__card-icon">
+                            <Icon />
+                          </div>
+                          <div className="help-page__card-q">Вопрос</div>
+                          <h3 className="help-page__card-title">{item.question}</h3>
+                          <div className="help-page__card-a">Ответ</div>
+                          {item.mailto ? (
+                            <a href={`mailto:${item.mailto}`} className="help-page__card-email">
+                              {item.mailto}
+                            </a>
+                          ) : (
+                            <p className="help-page__card-text">{item.answer}</p>
+                          )}
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
         </div>
       </main>
     </div>

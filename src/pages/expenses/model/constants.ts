@@ -1,37 +1,62 @@
-import type { ExpenseCategory } from './types'
+import type { ExpenseStatus, ExpenseType, PaymentMethod } from './types'
 
-export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
-  'Транспорт',
-  'Питание',
-  'Командировка',
-  'Офис',
-  'ПО и сервисы',
-  'Представительские',
-  'Прочее',
-]
-
-export const CATEGORY_META: Record<ExpenseCategory, { color: string; bg: string }> = {
-  'Транспорт': { color: '#2563eb', bg: 'rgba(37,99,235,0.08)' },
-  'Питание': { color: '#16a34a', bg: 'rgba(22,163,74,0.08)' },
-  'Командировка': { color: '#b45309', bg: 'rgba(180,83,9,0.08)' },
-  'Офис': { color: '#64748b', bg: 'rgba(100,116,139,0.08)' },
-  'ПО и сервисы': { color: '#7c3aed', bg: 'rgba(124,58,237,0.08)' },
-  'Представительские': { color: '#0891b2', bg: 'rgba(8,145,178,0.08)' },
-  'Прочее': { color: '#94a3b8', bg: 'rgba(148,163,184,0.08)' },
+export const STATUS_META: Record<ExpenseStatus, { label: string }> = {
+  draft:             { label: 'Черновик' },
+  pending_approval:  { label: 'На согласовании' },
+  revision_required: { label: 'На доработке' },
+  approved:          { label: 'Одобрено' },
+  rejected:          { label: 'Отклонено' },
+  paid:              { label: 'Выплачено' },
+  closed:            { label: 'Закрыто' },
+  not_reimbursable:  { label: 'Невозмещаемый' },
+  withdrawn:         { label: 'Отозвана' },
 }
 
-export const WEEKDAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+export const TYPE_META: Record<ExpenseType, { label: string }> = {
+  transport:     { label: 'Транспорт' },
+  food:          { label: 'Питание' },
+  accommodation: { label: 'Проживание' },
+  purchase:      { label: 'Закупка' },
+  services:      { label: 'Сервисы' },
+  entertainment: { label: 'Представительские' },
+  other:         { label: 'Прочее' },
+}
 
-export const STORAGE_KEY = 'expenses-calendar-data'
+export const PAYMENT_META: Record<PaymentMethod, { label: string }> = {
+  cash:          { label: 'Наличные' },
+  card:          { label: 'Банковская карта' },
+  transfer:      { label: 'Банковский перевод' },
+  other_payment: { label: 'Другое' },
+}
 
-export const DEFAULT_CURRENCY = 'UZS'
+export const REIMBURSABLE_META: Record<string, { label: string }> = {
+  reimbursable:     { label: 'Возмещаемый' },
+  non_reimbursable: { label: 'Невозмещаемый' },
+}
 
-/** Подсказки для поля «Подразделение» в заявке (можно ввести свой текст). */
-export const EXPENSE_REQUEST_DEPARTMENT_HINTS = [
-  'Юридический отдел',
-  'IT',
-  'Бухгалтерия',
-  'HR',
-  'Командировки',
-  'Администрация',
-] as const
+export const EXPENSE_TYPES: { value: ExpenseType; label: string }[] = [
+  { value: 'transport',     label: 'Транспорт' },
+  { value: 'food',          label: 'Питание' },
+  { value: 'accommodation', label: 'Проживание' },
+  { value: 'purchase',      label: 'Закупка' },
+  { value: 'services',      label: 'Сервисы' },
+  { value: 'entertainment', label: 'Представительские' },
+  { value: 'other',         label: 'Прочее' },
+]
+
+export const SUBTYPES: Record<ExpenseType, string[]> = {
+  transport:     ['Такси', 'Автобус', 'Метро', 'Самолёт', 'Поезд', 'Аренда авто'],
+  food:          ['Обед', 'Ужин', 'Завтрак', 'Банкет'],
+  accommodation: ['Гостиница', 'Апартаменты', 'Хостел'],
+  purchase:      ['Канцтовары', 'Оргтехника', 'Расходники', 'Мебель'],
+  services:      ['ПО / лицензии', 'Хостинг', 'Облачные сервисы', 'Подписка'],
+  entertainment: ['Встреча с клиентом', 'Корпоратив', 'Деловой ужин', 'Подарки'],
+  other:         [],
+}
+
+export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: 'cash',          label: 'Наличные' },
+  { value: 'card',          label: 'Банковская карта' },
+  { value: 'transfer',      label: 'Банковский перевод' },
+  { value: 'other_payment', label: 'Другое' },
+]

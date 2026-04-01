@@ -16,16 +16,7 @@ export function canViewExpensesRequestsAndReport(role: string | null | undefined
   return canModerateExpenseRequests(role)
 }
 
-/** Весь раздел «Расходы» (/expenses и вложенные маршруты): партнёры, администраторы, IT */
-const EXPENSES_SECTION_ROLES = new Set([
-  'Главный администратор',
-  'Администратор',
-  'Партнер',
-  'IT отдел',
-])
-
+/** Раздел «Расходы» (/expenses и вложенные маршруты): любой авторизованный пользователь с ролью (как в ROLES_VIEW на бэкенде). */
 export function canAccessExpensesSection(role: string | null | undefined): boolean {
-  const r = role?.trim()
-  if (!r) return false
-  return EXPENSES_SECTION_ROLES.has(r)
+  return Boolean(role?.trim())
 }

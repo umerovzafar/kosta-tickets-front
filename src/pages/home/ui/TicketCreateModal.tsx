@@ -61,6 +61,14 @@ export const TicketCreateModal = memo(function TicketCreateModal(props: TicketCr
     error,
   } = props
 
+  const prettyPriority = (value: string): string => {
+    const v = (value || '').toLowerCase()
+    if (v === 'high') return 'Высокий'
+    if (v === 'low') return 'Низкий'
+    if (v === 'medium') return 'Средний'
+    return value || 'Средний'
+  }
+
   const modal = (
     <div className="tm" role="dialog" aria-modal="true" aria-labelledby="tm-title">
       <div className="tm__backdrop" onClick={onClose} role="button" tabIndex={-1} aria-label="Закрыть" />
@@ -88,6 +96,11 @@ export const TicketCreateModal = memo(function TicketCreateModal(props: TicketCr
             <textarea className="tm__input tm__input--area" value={description} onChange={(e) => onDescriptionChange(e.target.value)} required rows={3} placeholder="Подробно опишите проблему или запрос" />
           </label>
 
+          <div className="tm__meta-row">
+            <span className="tm__meta-label">Статус</span>
+            <span className="tm__chip tm__chip--status">Новая</span>
+          </div>
+
           <div className="tm__row">
             <div className="tm__field" ref={props.categoryDropdownRef}>
               <span className="tm__label">Категория</span>
@@ -104,12 +117,12 @@ export const TicketCreateModal = memo(function TicketCreateModal(props: TicketCr
             <div className="tm__field" ref={props.priorityDropdownRef}>
               <span className="tm__label">Приоритет</span>
               <button type="button" className={`tm__select${priorityDropdownOpen ? ' tm__select--open' : ''}`} onClick={() => { setPriorityDropdownOpen(!priorityDropdownOpen); setCategoryDropdownOpen(false) }} aria-haspopup="listbox" aria-expanded={priorityDropdownOpen}>
-                <span className="tm__select-val">{priorities.find((p) => p.value === priority)?.label ?? priority}</span>
+                <span className="tm__select-val">{prettyPriority(priorities.find((p) => p.value === priority)?.label ?? priority)}</span>
                 <svg className="tm__select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
               </button>
               <div className={`tm__drop${priorityDropdownOpen ? ' tm__drop--open' : ''}`} role="listbox">
                 {priorities.map((p) => (
-                  <button key={p.value} type="button" role="option" aria-selected={priority === p.value} className={`tm__opt${priority === p.value ? ' tm__opt--active' : ''}`} onClick={() => { onPriorityChange(p.value); setPriorityDropdownOpen(false) }}>{p.label}</button>
+                  <button key={p.value} type="button" role="option" aria-selected={priority === p.value} className={`tm__opt${priority === p.value ? ' tm__opt--active' : ''}`} onClick={() => { onPriorityChange(p.value); setPriorityDropdownOpen(false) }}>{prettyPriority(p.label)}</button>
                 ))}
               </div>
             </div>

@@ -26,14 +26,14 @@
   --app-muted: #64748b;
   --app-meta: #94a3b8;
 
-  --app-accent-rgb: 59, 130, 246;
-  --app-accent: #3b82f6;
-  --app-accent-hover: #2563eb;
-  --app-accent-focus: rgba(59, 130, 246, 0.15);
-  --app-accent-light-bg: #eff6ff;
-  --app-accent-ultralight-bg: #e0f2fe;
-  --app-accent-border: #bfdbfe;
-  --app-accent-gradient: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  --app-accent-rgb: 79, 70, 229;
+  --app-accent: #4f46e5;
+  --app-accent-hover: #4338ca;
+  --app-accent-focus: rgba(79, 70, 229, 0.15);
+  --app-accent-light-bg: #eef2ff;
+  --app-accent-ultralight-bg: #e0e7ff;
+  --app-accent-border: #c7d2fe;
+  --app-accent-gradient: linear-gradient(135deg, #4f46e5, #6366f1);
 
   --app-primary-rgb: 34, 197, 94;
   --app-primary-gradient: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
@@ -165,7 +165,7 @@ body[data-theme='dark'] .home-stats__card {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
-body[data-theme='dark'] .home-stats__icon-wrap--total    { background: rgba(59, 130, 246, 0.15); color: #93c5fd; }
+body[data-theme='dark'] .home-stats__icon-wrap--total    { background: rgba(79, 70, 229, 0.15); color: #93c5fd; }
 body[data-theme='dark'] .home-stats__icon-wrap--progress { background: rgba(251, 191, 36, 0.12); color: #fcd34d; }
 body[data-theme='dark'] .home-stats__icon-wrap--closed   { background: rgba(34, 197, 94, 0.12);  color: #86efac; }
 body[data-theme='dark'] .home-stats__icon-wrap--impossible { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
@@ -207,7 +207,7 @@ body[data-theme='dark'] .home-tickets__priority--medium  { background: rgba(251,
 body[data-theme='dark'] .home-tickets__priority--low     { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
 
 body[data-theme='dark'] .home-tickets__row-icon--open,
-body[data-theme='dark'] .home-tickets__row-icon--approval { background: rgba(59, 130, 246, 0.14); color: #93c5fd; }
+body[data-theme='dark'] .home-tickets__row-icon--approval { background: rgba(79, 70, 229, 0.14); color: #93c5fd; }
 body[data-theme='dark'] .home-tickets__row-icon--closed   { background: rgba(34, 197, 94, 0.14); color: #86efac; }
 body[data-theme='dark'] .home-tickets__row-icon--in-progress { background: rgba(245, 158, 11, 0.14); color: #fcd34d; }
 body[data-theme='dark'] .home-tickets__row-icon--impossible { background: rgba(239, 68, 68, 0.14); color: #fca5a5; }
@@ -345,8 +345,8 @@ body[data-theme='dark'] .admin-page__status-pill--open {
 }
 
 body[data-theme='dark'] .admin-page__status-pill--done {
-  background: rgba(59, 130, 246, 0.16);
-  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(79, 70, 229, 0.16);
+  border-color: rgba(79, 70, 229, 0.5);
   color: #bfdbfe;
 }
 
@@ -357,7 +357,7 @@ body[data-theme='dark'] .admin-page__status-pill--cancel {
 }
 
 body[data-theme='dark'] .inv__status--in_use {
-  background: rgba(37, 99, 235, 0.2);
+  background: rgba(79, 70, 229, 0.2);
   color: #bfdbfe;
 }
 
@@ -430,7 +430,7 @@ body[data-theme='dark'] .inv__mini-btn:hover {
 }
 
 .burger-icon__line {
-  fill: #e5e7eb;
+  fill: currentColor;
   transform-origin: 50% 50%;
   transition:
     transform 0.18s ease,
