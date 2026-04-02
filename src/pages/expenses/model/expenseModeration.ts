@@ -1,14 +1,18 @@
-/** Совпадает с `ROLES_MODERATE` в tickets-back/expenses/presentation/deps.py */
-const EXPENSE_MODERATION_ROLES = new Set([
-  'Главный администратор',
-  'Администратор',
-  'Партнер',
+/**
+ * Роли, которые видят очередь «На согласование», отчёт Excel по расходам и кнопки согласования.
+ * Синхронизируйте с `ROLES_MODERATE` в tickets-back/expenses/presentation/deps.py
+ */
+const EXPENSE_MODERATION_ROLES_LC = new Set([
+  'главный администратор',
+  'администратор',
+  'партнер',
+  'партнёр',
 ])
 
 export function canModerateExpenseRequests(role: string | null | undefined): boolean {
-  const r = role?.trim()
+  const r = role?.trim().toLowerCase()
   if (!r) return false
-  return EXPENSE_MODERATION_ROLES.has(r)
+  return EXPENSE_MODERATION_ROLES_LC.has(r)
 }
 
 /** Разделы «Заявки» и «Отчётность» в шапке расходов — те же роли, что и модерация заявок */

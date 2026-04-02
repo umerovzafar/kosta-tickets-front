@@ -1,18 +1,19 @@
 import ExcelJS from 'exceljs'
 import type { ExpenseRequest, ExpenseType, ExpenseStatus, PaymentMethod } from '../model/types'
 import { STATUS_META, TYPE_META, REIMBURSABLE_META, PAYMENT_META } from '../model/constants'
+import { asExpenseNumber } from '../model/coerceExpense'
+import { formatExpenseAuthorExport } from '../model/expenseAuthor'
 
 // ─── Types ───────────────────────────────────────────────
-
-export type ReportCurrency = 'USD' | 'EUR' | 'RUB'
 
 export interface ReportConfig {
   title: string
   dateFrom: string         // YYYY-MM-DD, empty = no limit
   dateTo: string           // YYYY-MM-DD, empty = no limit
-  currency: ReportCurrency
   selectedTypes: ExpenseType[]    // empty = all
   selectedStatuses: ExpenseStatus[] // empty = all
+  /** Пусто = все способы */
+  selectedPaymentMethods: PaymentMethod[]
   reimbursable: 'all' | 'reimbursable' | 'non_reimbursable'
 }
 
@@ -20,9 +21,9 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   title: 'Отчёт по расходам компании',
   dateFrom: '',
   dateTo: '',
-  currency: 'USD',
   selectedTypes: [],
   selectedStatuses: [],
+  selectedPaymentMethods: [],
   reimbursable: 'all',
 }
 
@@ -44,6 +45,10 @@ function applyFilters(requests: ExpenseRequest[], cfg: ReportConfig): ExpenseReq
     if (cfg.dateTo   && r.expenseDate > cfg.dateTo)   return false
     if (cfg.selectedTypes.length   && !cfg.selectedTypes.includes(r.expenseType as ExpenseType)) return false
     if (cfg.selectedStatuses.length && !cfg.selectedStatuses.includes(r.status)) return false
+    if (cfg.selectedPaymentMethods.length) {
+      const pm = r.paymentMethod as string | null | undefined
+      if (pm == null || pm === '' || !cfg.selectedPaymentMethods.includes(pm as PaymentMethod)) return false
+    }
     if (cfg.reimbursable === 'reimbursable'     && !r.isReimbursable) return false
     if (cfg.reimbursable === 'non_reimbursable' && r.isReimbursable)  return false
     return true
@@ -110,21 +115,28 @@ export async function exportExpensesToExcel(
     properties: { tabColor: C_ACCENT },
   })
 
+  const LAST_COL = 'O'
+
   ws.columns = [
     { width: 6 },   // A №
     { width: 46 },  // B Description
-    { width: 14 },  // C Date
-    { width: 20 },  // D Type
-    { width: 16 },  // E Reimbursable
-    { width: 18 },  // F UZS amount
-    { width: 16 },  // G Rate
-    { width: 20 },  // H Equiv amount
-    { width: 20 },  // I Status
-    { width: 18 },  // J Payment
+    { width: 28 },  // C Author
+    { width: 14 },  // D Expense date
+    { width: 14 },  // E Payment due
+    { width: 20 },  // F Type
+    { width: 16 },  // G Reimbursable
+    { width: 18 },  // H UZS amount
+    { width: 16 },  // I Rate UZS/USD
+    { width: 18 },  // J Equiv USD
+    { width: 20 },  // K Status
+    { width: 18 },  // L Payment
+    { width: 22 },  // M Project
+    { width: 26 },  // N Vendor
+    { width: 36 },  // O Comment
   ]
 
   // ── Row 1: Document title ──────────────────────────────
-  ws.mergeCells('A1:J1')
+  ws.mergeCells(`A1:${LAST_COL}1`)
   ws.getRow(1).height = 36
   const titleCell = ws.getCell('A1')
   titleCell.value  = `${config.title.toUpperCase()}`
@@ -133,7 +145,7 @@ export async function exportExpensesToExcel(
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
 
   // ── Row 2: English subtitle ────────────────────────────
-  ws.mergeCells('A2:J2')
+  ws.mergeCells(`A2:${LAST_COL}2`)
   ws.getRow(2).height = 16
   const subtitleCell = ws.getCell('A2')
   subtitleCell.value = 'COMPANY EXPENSE REPORT'
@@ -143,7 +155,7 @@ export async function exportExpensesToExcel(
 
   // ── Row 3: Meta ────────────────────────────────────────
   ws.mergeCells('A3:F3')
-  ws.mergeCells('G3:J3')
+  ws.mergeCells(`G3:${LAST_COL}3`)
   ws.getRow(3).height = 18
   const fromLabel = config.dateFrom ? fmtDate(config.dateFrom) : '—'
   const toLabel   = config.dateTo   ? fmtDate(config.dateTo)   : todayStr()
@@ -160,7 +172,7 @@ export async function exportExpensesToExcel(
 
   // ── Row 4: spacer ──────────────────────────────────────
   ws.getRow(4).height = 4
-  ws.mergeCells('A4:J4')
+  ws.mergeCells(`A4:${LAST_COL}4`)
   ws.getCell('A4').fill = solid({ argb: 'FFF1F5F9' })
 
   // ── Row 5: Column headers (bilingual) ─────────────────
@@ -169,14 +181,19 @@ export async function exportExpensesToExcel(
   const COL_HEADERS = [
     { ru: '№',                 en: 'No.',                                   align: 'center' },
     { ru: 'Описание расхода',  en: 'Description of the expense',            align: 'left'   },
+    { ru: 'Автор',             en: 'Author / Submitter',                    align: 'left'   },
     { ru: 'Дата расхода',      en: 'Date of incurred expense',               align: 'center' },
+    { ru: 'Срок оплаты',      en: 'Payment due date',                       align: 'center' },
     { ru: 'Тип расхода',       en: 'Expense type',                          align: 'center' },
     { ru: 'Возмещение',        en: 'Reimbursable / Non-reimbursable',        align: 'center' },
     { ru: 'Сумма в сумах',     en: 'Amount in UZS',                         align: 'right'  },
-    { ru: `Валютный курс`,     en: `Currency rate (UZS/${config.currency})`, align: 'right'  },
-    { ru: `Экв. сумма, ${config.currency}`, en: `Equivalent amount, ${config.currency}`, align: 'right' },
+    { ru: 'Курс UZS / USD',    en: 'UZS per 1 USD (official rate)',          align: 'right'  },
+    { ru: 'Эквивалент, USD',   en: 'Equivalent amount, USD',                 align: 'right' },
     { ru: 'Статус',            en: 'Status',                                align: 'center' },
     { ru: 'Способ оплаты',     en: 'Payment method',                        align: 'center' },
+    { ru: 'Проект',            en: 'Project',                               align: 'left'   },
+    { ru: 'Контрагент',        en: 'Vendor / counterparty',                  align: 'left'   },
+    { ru: 'Комментарий',       en: 'Comment',                               align: 'left'   },
   ] as const
 
   ws.getRow(HDR_ROW).height = 44
@@ -195,7 +212,7 @@ export async function exportExpensesToExcel(
   })
 
   // Auto-filter on header row
-  ws.autoFilter = `A${HDR_ROW}:J${HDR_ROW}`
+  ws.autoFilter = `A${HDR_ROW}:${LAST_COL}${HDR_ROW}`
 
   // ── Data rows ──────────────────────────────────────────
   data.forEach((r, i) => {
@@ -207,21 +224,27 @@ export async function exportExpensesToExcel(
     const brd = border()
 
     const reimbKey = r.isReimbursable ? 'reimbursable' : 'non_reimbursable'
+    const payDue = r.paymentDeadline ? fmtDate(r.paymentDeadline.slice(0, 10)) : '—'
     const values: (string | number)[] = [
       i + 1,
       r.description,
+      formatExpenseAuthorExport(r),
       fmtDate(r.expenseDate),
+      payDue,
       TYPE_META[r.expenseType as ExpenseType]?.label ?? r.expenseType,
       REIMBURSABLE_META[reimbKey].label,
-      r.amountUzs,
-      r.exchangeRate,
-      r.equivalentAmount,
+      asExpenseNumber(r.amountUzs as unknown),
+      asExpenseNumber(r.exchangeRate as unknown),
+      asExpenseNumber(r.equivalentAmount as unknown),
       STATUS_META[r.status]?.label ?? r.status,
       r.paymentMethod && PAYMENT_META[r.paymentMethod as PaymentMethod] ? PAYMENT_META[r.paymentMethod as PaymentMethod].label : '',
+      r.projectId ?? '',
+      r.vendor ?? '',
+      r.comment ?? '',
     ]
 
     const aligns: ExcelJS.Alignment['horizontal'][] = [
-      'center','left','center','center','center','right','right','right','center','center'
+      'center', 'left', 'left', 'center', 'center', 'center', 'center', 'right', 'right', 'right', 'center', 'center', 'left', 'left', 'left',
     ]
 
     values.forEach((val, ci) => {
@@ -233,10 +256,10 @@ export async function exportExpensesToExcel(
       cell.alignment = { horizontal: aligns[ci], vertical: 'middle' }
     })
 
-    // Number formats
-    row.getCell(6).numFmt = '#,##0'
-    row.getCell(7).numFmt = '#,##0'
-    row.getCell(8).numFmt = '#,##0.00'
+    // Number formats (UZS / rate / USD)
+    row.getCell(8).numFmt = '#,##0'
+    row.getCell(9).numFmt = '#,##0'
+    row.getCell(10).numFmt = '#,##0.00'
   })
 
   // ── Totals row ─────────────────────────────────────────
@@ -247,7 +270,7 @@ export async function exportExpensesToExcel(
   const brdTotal = border(C_BORDER_DARK)
   const totalFont = font({ bold: true, size: 9 })
 
-  ws.mergeCells(`A${TOTAL_ROW}:E${TOTAL_ROW}`)
+  ws.mergeCells(`A${TOTAL_ROW}:F${TOTAL_ROW}`)
   const labelCell2 = totalRow.getCell(1)
   labelCell2.value = `ИТОГО / TOTAL  (${data.length} записей / records)`
   labelCell2.font  = totalFont
@@ -255,9 +278,9 @@ export async function exportExpensesToExcel(
   labelCell2.border = brdTotal
   labelCell2.alignment = { horizontal: 'center', vertical: 'middle' }
 
-  // UZS total
-  const uzsCell = totalRow.getCell(6)
-  uzsCell.value  = { formula: `SUM(F${DATA_ROW_START}:F${TOTAL_ROW - 1})` }
+  // UZS total (column H)
+  const uzsCell = totalRow.getCell(8)
+  uzsCell.value  = { formula: `SUM(H${DATA_ROW_START}:H${TOTAL_ROW - 1})` }
   uzsCell.numFmt = '#,##0 "UZS"'
   uzsCell.font   = totalFont
   uzsCell.fill   = solid(C_TOTAL)
@@ -265,21 +288,21 @@ export async function exportExpensesToExcel(
   uzsCell.alignment = { horizontal: 'right', vertical: 'middle' }
 
   // Rate cell (empty)
-  const rateCell = totalRow.getCell(7)
+  const rateCell = totalRow.getCell(9)
   rateCell.fill  = solid(C_TOTAL)
   rateCell.border = brdTotal
 
-  // Equiv total
-  const equivCell = totalRow.getCell(8)
-  equivCell.value  = { formula: `SUM(H${DATA_ROW_START}:H${TOTAL_ROW - 1})` }
-  equivCell.numFmt = `#,##0.00 "${config.currency}"`
+  // Equiv total (column J)
+  const equivCell = totalRow.getCell(10)
+  equivCell.value  = { formula: `SUM(J${DATA_ROW_START}:J${TOTAL_ROW - 1})` }
+  equivCell.numFmt = '#,##0.00 "USD"'
   equivCell.font   = totalFont
   equivCell.fill   = solid(C_TOTAL)
   equivCell.border = brdTotal
   equivCell.alignment = { horizontal: 'right', vertical: 'middle' }
 
-  // Empty trailing cells
-  for (let c = 9; c <= 10; c++) {
+  // Empty trailing cells (status … comment)
+  for (let c = 11; c <= 15; c++) {
     const cell = totalRow.getCell(c)
     cell.fill   = solid(C_TOTAL)
     cell.border = brdTotal
@@ -317,7 +340,7 @@ export async function exportExpensesToExcel(
     // Headers
     const hdr = ws2.getRow(startRow + 1)
     hdr.height = 18
-    const hdrLabels = ['Категория / Category', 'Кол-во / Count', `Сумма, UZS / Amount, UZS`, `Экв. / Equiv., ${config.currency}`]
+    const hdrLabels = ['Категория / Category', 'Кол-во / Count', 'Сумма, UZS / Amount, UZS', 'Экв., USD / Equiv., USD']
     hdrLabels.forEach((l, i) => {
       const c = hdr.getCell(i + 1)
       c.value = l
@@ -375,8 +398,8 @@ export async function exportExpensesToExcel(
     return {
       label: `${TYPE_META[t].label} / ${TYPE_META[t].label}`,
       count: subset.length,
-      uzs: subset.reduce((s, r) => s + r.amountUzs, 0),
-      equiv: subset.reduce((s, r) => s + r.equivalentAmount, 0),
+      uzs: subset.reduce((s, r) => s + asExpenseNumber(r.amountUzs as unknown), 0),
+      equiv: subset.reduce((s, r) => s + asExpenseNumber(r.equivalentAmount as unknown), 0),
     }
   }).filter(r => r.count > 0)
 
@@ -386,8 +409,8 @@ export async function exportExpensesToExcel(
     return {
       label: STATUS_META[s].label,
       count: subset.length,
-      uzs: subset.reduce((acc, r) => acc + r.amountUzs, 0),
-      equiv: subset.reduce((acc, r) => acc + r.equivalentAmount, 0),
+      uzs: subset.reduce((acc, r) => acc + asExpenseNumber(r.amountUzs as unknown), 0),
+      equiv: subset.reduce((acc, r) => acc + asExpenseNumber(r.equivalentAmount as unknown), 0),
     }
   }).filter(r => r.count > 0)
 
@@ -400,8 +423,8 @@ export async function exportExpensesToExcel(
     return {
       label,
       count: subset.length,
-      uzs: subset.reduce((s, r) => s + r.amountUzs, 0),
-      equiv: subset.reduce((s, r) => s + r.equivalentAmount, 0),
+      uzs: subset.reduce((s, r) => s + asExpenseNumber(r.amountUzs as unknown), 0),
+      equiv: subset.reduce((s, r) => s + asExpenseNumber(r.equivalentAmount as unknown), 0),
     }
   }).filter(r => r.count > 0)
 

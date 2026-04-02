@@ -1,5 +1,6 @@
-import { ExpensesShell } from './ExpensesShell'
+import { ExpensesPage } from './ExpensesPage'
 
+/** Очередь заявок в статусе «На согласовании»; согласование — партнёры и администраторы. */
 export function ExpensesRequestsPage() {
-  return <ExpensesShell title="Заявки на расходы" />
+  return <ExpensesPage variant="moderationQueue" />
 }

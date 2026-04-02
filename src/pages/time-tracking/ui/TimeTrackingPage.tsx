@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { routes } from '@shared/config'
+import { useCurrentUser } from '@shared/hooks'
 import type { TimeTabId } from '../model/types'
 import { TABS } from '../model/constants'
 import { TimeTrackingHeader } from './TimeTrackingHeader'
@@ -33,8 +34,16 @@ function readTab(): TimeTabId {
 
 export function TimeTrackingPage() {
   const navigate = useNavigate()
+  const { user, loading } = useCurrentUser()
   const [activeTab, setActiveTab] = useState<TimeTabId>(readTab)
   const handleBack = useCallback(() => navigate(routes.home), [navigate])
+
+  const role = user?.role?.trim() ?? ''
+  const hasAccess = !loading && (
+    role === 'Администратор' ||
+    role === 'IT отдел' ||
+    role.toLowerCase().includes('партнер')
+  )
 
   function handleTabChange(id: TimeTabId) {
     setActiveTab(id)
@@ -44,16 +53,18 @@ export function TimeTrackingPage() {
   return (
     <div className="time-page time-page--enter">
       <main className="time-page__main">
-        <div className="time-page__dev-overlay" role="status" aria-label="Вкладка ещё на разработке">
-          <div className="time-page__dev-overlay-inner">
-            <span className="time-page__dev-overlay-icon" aria-hidden><IconLock /></span>
-            <p className="time-page__dev-overlay-text">Вкладка ещё на разработке</p>
-            <button type="button" className="time-page__dev-overlay-back" onClick={handleBack}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-              Назад
-            </button>
+        {!hasAccess && (
+          <div className="time-page__dev-overlay" role="status" aria-label="Вкладка ещё на разработке">
+            <div className="time-page__dev-overlay-inner">
+              <span className="time-page__dev-overlay-icon" aria-hidden><IconLock /></span>
+              <p className="time-page__dev-overlay-text">Вкладка ещё на разработке</p>
+              <button type="button" className="time-page__dev-overlay-back" onClick={handleBack}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                Назад
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         <TimeTrackingHeader />
         <TimeTrackingTabBar activeTab={activeTab} onTabChange={handleTabChange} />
         <div

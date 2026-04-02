@@ -1,5 +1,12 @@
 import { apiFetch } from '@shared/api'
-import type { ExpenseRequest, ListParams, ExpenseTypeRef, ProjectRef } from './types'
+import { normalizeExpenseRequest } from './coerceExpense'
+import type {
+  ExpenseRequest,
+  ExpenseAttachmentKind,
+  ListParams,
+  ExpenseTypeRef,
+  ProjectRef,
+} from './types'
 
 interface ListResponse {
   items: ExpenseRequest[]
@@ -42,12 +49,14 @@ export async function fetchExpenses(params: ListParams = {}): Promise<ListRespon
   const query = qs.toString()
   const res = await apiFetch(`/api/v1/expenses${query ? `?${query}` : ''}`)
   await throwIfNotOk(res)
-  return res.json() as Promise<ListResponse>
+  const j = await res.json() as ListResponse
+  return { ...j, items: j.items.map(normalizeExpenseRequest) }
 }
 
 export interface ExpenseCreateBody {
   description: string
   expenseDate: string
+  paymentDeadline?: string | null
   amountUzs: number
   exchangeRate: number
   expenseType: string
@@ -67,7 +76,7 @@ export async function createExpense(body: ExpenseCreateBody): Promise<ExpenseReq
     body: JSON.stringify(body),
   })
   await throwIfNotOk(res)
-  return res.json() as Promise<ExpenseRequest>
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
 export async function updateExpense(id: string, body: Partial<ExpenseCreateBody>): Promise<ExpenseRequest> {
@@ -77,34 +86,77 @@ export async function updateExpense(id: string, body: Partial<ExpenseCreateBody>
     body: JSON.stringify(body),
   })
   await throwIfNotOk(res)
-  return res.json() as Promise<ExpenseRequest>
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
 export async function submitExpense(id: string): Promise<ExpenseRequest> {
   const res = await apiFetch(`/api/v1/expenses/${id}/submit`, { method: 'POST' })
   await throwIfNotOk(res)
-  return res.json() as Promise<ExpenseRequest>
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
+}
+
+/** Одобрение: только роли из ROLES_MODERATE (партнёр, администраторы). */
+export async function approveExpense(id: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/approve`, { method: 'POST' })
+  await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
+}
+
+export async function rejectExpense(id: string, reason: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: reason.trim() }),
+  })
+  await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
+}
+
+export async function reviseExpense(id: string, comment: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/revise`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comment: comment.trim() }),
+  })
+  await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
+}
+
+export async function fetchExpenseById(id: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}`)
+  await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
 export async function withdrawExpense(id: string): Promise<ExpenseRequest> {
   const res = await apiFetch(`/api/v1/expenses/${id}/withdraw`, { method: 'POST' })
   await throwIfNotOk(res)
-  return res.json() as Promise<ExpenseRequest>
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
-export async function uploadAttachment(id: string, file: File): Promise<void> {
+export async function uploadAttachment(
+  id: string,
+  file: File,
+  attachmentKind?: ExpenseAttachmentKind,
+): Promise<ExpenseRequest> {
   const form = new FormData()
   form.append('file', file)
-  const res = await apiFetch(`/api/v1/expenses/${id}/attachments`, {
+  if (attachmentKind) form.append('attachmentKind', attachmentKind)
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/attachments`, {
     method: 'POST',
     body: form,
   })
   await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
-export async function deleteAttachment(id: string, attId: string): Promise<void> {
-  const res = await apiFetch(`/api/v1/expenses/${id}/attachments/${attId}`, { method: 'DELETE' })
+export async function deleteAttachment(id: string, attId: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(
+    `/api/v1/expenses/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attId)}`,
+    { method: 'DELETE' },
+  )
   await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
 export async function fetchExpenseTypes(): Promise<ExpenseTypeRef[]> {

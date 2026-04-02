@@ -24,6 +24,12 @@ export default defineConfig({
         target: 'http://localhost:1234',
         changeOrigin: true,
       },
+      '/cbu-json': {
+        target: 'https://cbu.uz',
+        changeOrigin: true,
+        secure: true,
+        rewrite: p => p.replace(/^\/cbu-json/, ''),
+      },
     },
   },
 })

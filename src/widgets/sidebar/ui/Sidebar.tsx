@@ -82,8 +82,6 @@ export function Sidebar({
   const role = user?.role?.toLowerCase() || ''
   const isEmployee = !loading && role.includes('сотрудник')
   const isAdminOrPartner = !loading && (role.includes('администратор') || role.includes('партнер'))
-  const hasTimeTracking = !loading && user?.time_tracking_role != null
-
   let visibleNavItems = navItems
 
   if (isEmployee) {
@@ -98,10 +96,6 @@ export function Sidebar({
     )
   } else if (!isAdminOrPartner) {
     visibleNavItems = navItems.filter((item) => item.label !== 'Админ-панель')
-  }
-
-  if (!hasTimeTracking) {
-    visibleNavItems = visibleNavItems.filter((item) => item.label !== 'Учёт времени')
   }
 
   if (!loading && !canAccessExpensesSection(user?.role)) {

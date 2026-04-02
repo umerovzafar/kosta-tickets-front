@@ -1,11 +1,10 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { ExpenseRequest, ExpenseType } from '../model/types'
-import { EXPENSE_TYPES, STATUS_META } from '../model/constants'
+import type { ExpenseRequest, ExpenseStatus, ExpenseType, PaymentMethod } from '../model/types'
+import { EXPENSE_TYPES, PAYMENT_METHODS, STATUS_META } from '../model/constants'
 import {
   exportExpensesToExcel,
   DEFAULT_REPORT_CONFIG,
   type ReportConfig,
-  type ReportCurrency,
 } from '../lib/exportExpenses'
 
 type Props = {
@@ -14,26 +13,59 @@ type Props = {
   onClose: () => void
 }
 
-const CURRENCIES: { value: ReportCurrency; label: string }[] = [
-  { value: 'USD', label: 'USD' },
-  { value: 'EUR', label: 'EUR' },
-  { value: 'RUB', label: 'RUB' },
-]
+const STATUS_OPTIONS = (Object.keys(STATUS_META) as ExpenseStatus[]).map(s => ({
+  value: s,
+  label: STATUS_META[s].label,
+}))
 
-const STATUSES = Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.label }))
+/** Тумблер «все / выборочно» для отчёта (те же стили, что возмещаемый расход в форме). */
+function ReportAllToggle({
+  id,
+  label,
+  checked,
+  onToggle,
+}: {
+  id: string
+  label: string
+  checked: boolean
+  onToggle: (next: boolean) => void
+}) {
+  const labelId = `rep-all-${id}-label`
+  return (
+    <div className="exp-form-switch-row rep-report-all-row">
+      <span id={labelId} className="rep-report-all-text">
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-labelledby={labelId}
+        aria-checked={checked}
+        className={`exp-form-switch${checked ? ' exp-form-switch--on' : ''}`}
+        onClick={() => onToggle(!checked)}
+      >
+        <span className="exp-form-switch__thumb" />
+      </button>
+    </div>
+  )
+}
 
 export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
   const [config, setConfig] = useState<ReportConfig>(DEFAULT_REPORT_CONFIG)
   const [isLoading, setIsLoading] = useState(false)
+  const [exportErr, setExportErr] = useState<string | null>(null)
   const [allTypes, setAllTypes] = useState(true)
   const [allStatuses, setAllStatuses] = useState(true)
+  const [allPayments, setAllPayments] = useState(true)
 
   useEffect(() => {
     if (isOpen) {
       setConfig(DEFAULT_REPORT_CONFIG)
       setAllTypes(true)
       setAllStatuses(true)
+      setAllPayments(true)
       setIsLoading(false)
+      setExportErr(null)
     }
   }, [isOpen])
 
@@ -53,26 +85,38 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
     setConfig(prev => ({ ...prev, [key]: val }))
   }, [])
 
-  const toggleType = useCallback((type: string) => {
+  const toggleType = useCallback((type: ExpenseType) => {
     setConfig(prev => {
-      const has = prev.selectedTypes.includes(type as never)
+      const has = prev.selectedTypes.includes(type)
       return {
         ...prev,
         selectedTypes: has
           ? prev.selectedTypes.filter(t => t !== type)
-          : [...prev.selectedTypes, type as never],
+          : [...prev.selectedTypes, type],
       }
     })
   }, [])
 
-  const toggleStatus = useCallback((status: string) => {
+  const toggleStatus = useCallback((status: ExpenseStatus) => {
     setConfig(prev => {
-      const has = prev.selectedStatuses.includes(status as never)
+      const has = prev.selectedStatuses.includes(status)
       return {
         ...prev,
         selectedStatuses: has
           ? prev.selectedStatuses.filter(s => s !== status)
-          : [...prev.selectedStatuses, status as never],
+          : [...prev.selectedStatuses, status],
+      }
+    })
+  }, [])
+
+  const togglePayment = useCallback((method: PaymentMethod) => {
+    setConfig(prev => {
+      const has = prev.selectedPaymentMethods.includes(method)
+      return {
+        ...prev,
+        selectedPaymentMethods: has
+          ? prev.selectedPaymentMethods.filter(m => m !== method)
+          : [...prev.selectedPaymentMethods, method],
       }
     })
   }, [])
@@ -87,13 +131,19 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
     if (checked) setConfig(prev => ({ ...prev, selectedStatuses: [] }))
   }, [])
 
+  const handleAllPayments = useCallback((checked: boolean) => {
+    setAllPayments(checked)
+    if (checked) setConfig(prev => ({ ...prev, selectedPaymentMethods: [] }))
+  }, [])
+
   const handleGenerate = useCallback(async () => {
     setIsLoading(true)
+    setExportErr(null)
     try {
       await exportExpensesToExcel(requests, config)
       onClose()
     } catch (err) {
-      console.error('Export failed:', err)
+      setExportErr(err instanceof Error ? err.message : 'Не удалось сформировать файл')
     } finally {
       setIsLoading(false)
     }
@@ -105,7 +155,11 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
     if (config.dateFrom && r.expenseDate < config.dateFrom) return false
     if (config.dateTo   && r.expenseDate > config.dateTo)   return false
     if (!allTypes && config.selectedTypes.length && !config.selectedTypes.includes(r.expenseType as ExpenseType)) return false
-    if (!allStatuses && config.selectedStatuses.length && !config.selectedStatuses.includes(r.status as never)) return false
+    if (!allStatuses && config.selectedStatuses.length && !config.selectedStatuses.includes(r.status)) return false
+    if (!allPayments && config.selectedPaymentMethods.length) {
+      const pm = r.paymentMethod as string | null | undefined
+      if (pm == null || pm === '' || !config.selectedPaymentMethods.includes(pm as PaymentMethod)) return false
+    }
     if (config.reimbursable === 'reimbursable'     && !r.isReimbursable) return false
     if (config.reimbursable === 'non_reimbursable' && r.isReimbursable)  return false
     return true
@@ -114,8 +168,7 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
   return (
     <>
       <div className="rep-overlay" aria-hidden onClick={onClose} />
-      <div className="rep-modal" role="dialog" aria-modal aria-label="Создать отчёт">
-        {/* Header */}
+      <div className="rep-modal" role="dialog" aria-modal aria-labelledby="rep-modal-title">
         <div className="rep-modal__hd">
           <div className="rep-modal__hd-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -127,8 +180,8 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
             </svg>
           </div>
           <div>
-            <h2 className="rep-modal__title">Создать отчёт Excel</h2>
-            <p className="rep-modal__sub">Настройте параметры и скачайте файл</p>
+            <h2 id="rep-modal-title" className="rep-modal__title">Создать отчёт Excel</h2>
+            <p className="rep-modal__sub">Фильтры, как в заявках: дата расхода, тип, статус, оплата, возмещение</p>
           </div>
           <button type="button" className="rep-modal__close" onClick={onClose} aria-label="Закрыть">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -137,9 +190,7 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="rep-modal__body">
-          {/* Report title */}
           <div className="rep-field">
             <label className="rep-label">Название отчёта</label>
             <input
@@ -151,9 +202,8 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
             />
           </div>
 
-          {/* Period */}
           <div className="rep-field">
-            <label className="rep-label">Период</label>
+            <label className="rep-label">Период (дата расхода)</label>
             <div className="rep-date-row">
               <div className="rep-date-wrap">
                 <span className="rep-date-label">С</span>
@@ -164,30 +214,22 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
                 <input type="date" className="rep-input rep-input--date" value={config.dateTo} onChange={e => set('dateTo', e.target.value)} />
               </div>
             </div>
+            <p className="rep-field-hint">Пустое «С» — без нижней границы; пустое «По» — без верхней. Оба пустые — все даты расхода из списка.</p>
           </div>
 
-          {/* Currency */}
-          <div className="rep-field">
-            <label className="rep-label">Валюта эквивалента</label>
-            <div className="rep-radio-row">
-              {CURRENCIES.map(c => (
-                <label key={c.value} className={`rep-radio${config.currency === c.value ? ' rep-radio--on' : ''}`}>
-                  <input type="radio" name="currency" value={c.value} checked={config.currency === c.value} onChange={() => set('currency', c.value)} />
-                  {c.label}
-                </label>
-              ))}
-            </div>
+          <div className="rep-field rep-field--note">
+            <p className="rep-label" style={{ marginBottom: '0.35rem' }}>Содержимое файла</p>
+            <p className="rep-field-hint">
+              В таблицу выгружаются поля заявки: сумма в <strong>UZS</strong>, курс <strong>UZS/USD</strong>, эквивалент в <strong>USD</strong> (как в системе),
+              срок оплаты, проект, контрагент, комментарий, способ оплаты и статус.
+            </p>
           </div>
 
-          {/* Expense types */}
           <div className="rep-field">
             <label className="rep-label">Типы расходов</label>
-            <label className="rep-check rep-check--all">
-              <input type="checkbox" checked={allTypes} onChange={e => handleAllTypes(e.target.checked)} />
-              <span>Все типы</span>
-            </label>
+            <ReportAllToggle id="types" label="Все типы" checked={allTypes} onToggle={handleAllTypes} />
             {!allTypes && (
-              <div className="rep-check-grid">
+              <div className="rep-check-grid rep-check-grid--wide">
                 {EXPENSE_TYPES.map(t => (
                   <label key={t.value} className={`rep-check${config.selectedTypes.includes(t.value) ? ' rep-check--on' : ''}`}>
                     <input
@@ -202,20 +244,16 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
             )}
           </div>
 
-          {/* Statuses */}
           <div className="rep-field">
-            <label className="rep-label">Статусы</label>
-            <label className="rep-check rep-check--all">
-              <input type="checkbox" checked={allStatuses} onChange={e => handleAllStatuses(e.target.checked)} />
-              <span>Все статусы</span>
-            </label>
+            <label className="rep-label">Статусы заявок</label>
+            <ReportAllToggle id="statuses" label="Все статусы" checked={allStatuses} onToggle={handleAllStatuses} />
             {!allStatuses && (
-              <div className="rep-check-grid">
-                {STATUSES.map(s => (
-                  <label key={s.value} className={`rep-check${config.selectedStatuses.includes(s.value as never) ? ' rep-check--on' : ''}`}>
+              <div className="rep-check-grid rep-check-grid--wide">
+                {STATUS_OPTIONS.map(s => (
+                  <label key={s.value} className={`rep-check${config.selectedStatuses.includes(s.value) ? ' rep-check--on' : ''}`}>
                     <input
                       type="checkbox"
-                      checked={config.selectedStatuses.includes(s.value as never)}
+                      checked={config.selectedStatuses.includes(s.value)}
                       onChange={() => toggleStatus(s.value)}
                     />
                     <span className={`exp-status exp-status--${s.value}`}>{s.label}</span>
@@ -225,10 +263,29 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
             )}
           </div>
 
-          {/* Reimbursable */}
+          <div className="rep-field">
+            <label className="rep-label">Способ оплаты</label>
+            <ReportAllToggle id="payments" label="Все способы" checked={allPayments} onToggle={handleAllPayments} />
+            {!allPayments && (
+              <div className="rep-check-grid rep-check-grid--wide">
+                {PAYMENT_METHODS.map(m => (
+                  <label key={m.value} className={`rep-check${config.selectedPaymentMethods.includes(m.value) ? ' rep-check--on' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={config.selectedPaymentMethods.includes(m.value)}
+                      onChange={() => togglePayment(m.value)}
+                    />
+                    <span>{m.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="rep-field-hint">Заявки без указанного способа оплаты попадут в отчёт только при включённом «Все способы».</p>
+          </div>
+
           <div className="rep-field">
             <label className="rep-label">Возмещаемость</label>
-            <div className="rep-radio-row">
+            <div className="rep-radio-row rep-radio-row--wide">
               {[
                 { value: 'all', label: 'Все' },
                 { value: 'reimbursable', label: 'Возмещаемые' },
@@ -241,13 +298,17 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
               ))}
             </div>
           </div>
+
+          {exportErr && (
+            <p className="rep-field-error" role="alert">{exportErr}</p>
+          )}
         </div>
 
-        {/* Footer */}
         <div className="rep-modal__ft">
           <div className="rep-modal__preview">
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-            В отчёт войдёт <strong>{previewCount}</strong> {previewCount === 1 ? 'запись' : previewCount < 5 ? 'записи' : 'записей'}
+            В отчёт войдёт <strong>{previewCount}</strong>{' '}
+            {previewCount === 1 ? 'запись' : previewCount < 5 ? 'записи' : 'записей'}
           </div>
           <div className="rep-modal__actions">
             <button type="button" className="rep-btn rep-btn--ghost" onClick={onClose} disabled={isLoading}>

@@ -16,9 +16,30 @@ export type ExpenseType =
   | 'purchase'
   | 'services'
   | 'entertainment'
+  | 'client_expense'
   | 'other'
 
 export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'other_payment'
+
+/** Валюта ввода суммы в форме (в API хранится сумма в UZS). */
+export type ExpenseAmountCurrency = 'UZS' | 'USD' | 'RUB' | 'GBP' | 'EUR'
+
+/** Тип вложения (сохраняется в API как attachmentKind). */
+export type ExpenseAttachmentKind = 'payment_document' | 'payment_receipt'
+
+/** Файлы для загрузки по типам (новая заявка / черновик). */
+export type ExpenseFilesByKind = Record<ExpenseAttachmentKind, File[]>
+
+export const EXPENSE_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
+
+/** Профиль автора заявки (gateway + auth), см. tickets-back/docs/expenses-frontend.md */
+export interface ExpenseCreatedBy {
+  id: number
+  displayName: string | null
+  email: string | null
+  picture?: string | null
+  position?: string | null
+}
 
 export interface AttachmentItem {
   id: string
@@ -27,6 +48,8 @@ export interface AttachmentItem {
   storageKey: string
   mimeType: string | null
   sizeBytes: number
+  /** payment_document | payment_receipt | отсутствует у старых вложений */
+  attachmentKind?: string | null
   uploadedByUserId: number
   uploadedAt: string
 }
@@ -35,6 +58,8 @@ export interface ExpenseRequest {
   id: string
   description: string
   expenseDate: string
+  /** Конечный срок оплаты (ISO YYYY-MM-DD), опционально */
+  paymentDeadline?: string | null
   amountUzs: number
   exchangeRate: number
   equivalentAmount: number
@@ -49,6 +74,8 @@ export interface ExpenseRequest {
   comment: string | null
   status: ExpenseStatus
   createdByUserId: number
+  /** Обогащение из auth в ответах списка и GET по id */
+  createdBy?: ExpenseCreatedBy
   updatedByUserId: number
   createdAt: string
   updatedAt: string
@@ -65,9 +92,13 @@ export interface ExpenseRequest {
 export interface ExpenseFormValues {
   description: string
   expenseDate: string
+  paymentDeadline: string
   expenseType: string
-  expenseSubtype: string
   isReimbursable: boolean | null
+  /** Валюта поля «Сумма». */
+  amountCurrency: ExpenseAmountCurrency
+  /** Единиц выбранной валюты за 1 USD (нужно для RUB, GBP, EUR). */
+  foreignPerUsd: string
   amountUzs: string
   exchangeRate: string
   paymentMethod: string
@@ -80,10 +111,14 @@ export interface ExpenseFormValues {
 export interface ExpenseFormErrors {
   description?: string
   expenseDate?: string
+  paymentDeadline?: string
   expenseType?: string
   isReimbursable?: string
   amountUzs?: string
   exchangeRate?: string
+  foreignPerUsd?: string
+  attachmentsPaymentDoc?: string
+  attachmentsReceipt?: string
 }
 
 export interface ExpenseTypeRef {

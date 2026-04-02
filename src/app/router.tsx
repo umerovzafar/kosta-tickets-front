@@ -15,6 +15,8 @@ import { LoginPage } from '@pages/login'
 import { ProjectDetailPage } from '@pages/project-detail'
 import { TicketDetailPage } from '@pages/ticket-detail'
 import { UserEditPage } from '@pages/user-edit'
+import { ExpensesErrorFallback } from '@pages/expenses/ui/ExpensesErrorFallback'
+import { ExpensesNestedLayout } from '@app/ExpensesNestedLayout'
 
 function withGuest(children: ReactNode) {
   return (
@@ -43,31 +45,31 @@ const router = createBrowserRouter([
   { path: routes.projectDetail, element: withProtected(<ProjectDetailPage />) },
   {
     path: routes.expenses,
+    errorElement: <ExpensesErrorFallback />,
     element: withProtected(
       <ExpensesAccessRoute>
-        <ExpensesPage />
+        <ExpensesNestedLayout />
       </ExpensesAccessRoute>,
     ),
-  },
-  {
-    path: routes.expensesRequests,
-    element: withProtected(
-      <ExpensesAccessRoute>
-        <ExpensesMgmtRoute>
-          <ExpensesRequestsPage />
-        </ExpensesMgmtRoute>
-      </ExpensesAccessRoute>,
-    ),
-  },
-  {
-    path: routes.expensesReport,
-    element: withProtected(
-      <ExpensesAccessRoute>
-        <ExpensesMgmtRoute>
-          <ExpensesReportPage />
-        </ExpensesMgmtRoute>
-      </ExpensesAccessRoute>,
-    ),
+    children: [
+      { index: true, element: <ExpensesPage /> },
+      {
+        path: 'requests',
+        element: (
+          <ExpensesMgmtRoute>
+            <ExpensesRequestsPage />
+          </ExpensesMgmtRoute>
+        ),
+      },
+      {
+        path: 'report',
+        element: (
+          <ExpensesMgmtRoute>
+            <ExpensesReportPage />
+          </ExpensesMgmtRoute>
+        ),
+      },
+    ],
   },
   { path: routes.todo, element: withProtected(<TodoPage />) },
   { path: routes.rules, element: withProtected(<RulesPage />) },

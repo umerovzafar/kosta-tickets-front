@@ -1,4 +1,9 @@
-import type { ExpenseStatus, ExpenseType, PaymentMethod } from './types'
+import type { ExpenseAmountCurrency, ExpenseStatus, ExpenseType, PaymentMethod } from './types'
+
+/** Статусы заявок на странице «Расходы компании» (/expenses): согласованные, отклонённые и завершённые. */
+export const EXPENSE_REGISTRY_STATUSES: ExpenseStatus[] = ['approved', 'rejected', 'paid', 'closed']
+
+export const EXPENSE_REGISTRY_STATUS_SET = new Set<ExpenseStatus>(EXPENSE_REGISTRY_STATUSES)
 
 export const STATUS_META: Record<ExpenseStatus, { label: string }> = {
   draft:             { label: 'Черновик' },
@@ -13,13 +18,14 @@ export const STATUS_META: Record<ExpenseStatus, { label: string }> = {
 }
 
 export const TYPE_META: Record<ExpenseType, { label: string }> = {
-  transport:     { label: 'Транспорт' },
-  food:          { label: 'Питание' },
-  accommodation: { label: 'Проживание' },
-  purchase:      { label: 'Закупка' },
-  services:      { label: 'Сервисы' },
-  entertainment: { label: 'Представительские' },
-  other:         { label: 'Прочее' },
+  transport:      { label: 'Транспорт' },
+  food:           { label: 'Питание' },
+  accommodation:  { label: 'Проживание' },
+  purchase:       { label: 'Закупка' },
+  services:       { label: 'Сервисы' },
+  entertainment:  { label: 'Представительские' },
+  client_expense: { label: 'За клиента' },
+  other:          { label: 'Прочее' },
 }
 
 export const PAYMENT_META: Record<PaymentMethod, { label: string }> = {
@@ -34,25 +40,24 @@ export const REIMBURSABLE_META: Record<string, { label: string }> = {
   non_reimbursable: { label: 'Невозмещаемый' },
 }
 
-export const EXPENSE_TYPES: { value: ExpenseType; label: string }[] = [
-  { value: 'transport',     label: 'Транспорт' },
-  { value: 'food',          label: 'Питание' },
-  { value: 'accommodation', label: 'Проживание' },
-  { value: 'purchase',      label: 'Закупка' },
-  { value: 'services',      label: 'Сервисы' },
-  { value: 'entertainment', label: 'Представительские' },
-  { value: 'other',         label: 'Прочее' },
+export const EXPENSE_CURRENCIES: { value: ExpenseAmountCurrency; label: string }[] = [
+  { value: 'UZS', label: 'Сум' },
+  { value: 'RUB', label: 'Рубли' },
+  { value: 'USD', label: 'Доллары' },
+  { value: 'GBP', label: 'Фунты' },
+  { value: 'EUR', label: 'Евро' },
 ]
 
-export const SUBTYPES: Record<ExpenseType, string[]> = {
-  transport:     ['Такси', 'Автобус', 'Метро', 'Самолёт', 'Поезд', 'Аренда авто'],
-  food:          ['Обед', 'Ужин', 'Завтрак', 'Банкет'],
-  accommodation: ['Гостиница', 'Апартаменты', 'Хостел'],
-  purchase:      ['Канцтовары', 'Оргтехника', 'Расходники', 'Мебель'],
-  services:      ['ПО / лицензии', 'Хостинг', 'Облачные сервисы', 'Подписка'],
-  entertainment: ['Встреча с клиентом', 'Корпоратив', 'Деловой ужин', 'Подарки'],
-  other:         [],
-}
+export const EXPENSE_TYPES: { value: ExpenseType; label: string }[] = [
+  { value: 'transport',      label: 'Транспорт' },
+  { value: 'food',           label: 'Питание' },
+  { value: 'accommodation',  label: 'Проживание' },
+  { value: 'purchase',       label: 'Закупка' },
+  { value: 'services',       label: 'Сервисы' },
+  { value: 'entertainment',  label: 'Представительские' },
+  { value: 'client_expense', label: 'За клиента' },
+  { value: 'other',          label: 'Прочее' },
+]
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'cash',          label: 'Наличные' },
