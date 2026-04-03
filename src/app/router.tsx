@@ -69,6 +69,8 @@ const router = createBrowserRouter([
           </ExpensesMgmtRoute>
         ),
       },
+      /** Ссылка из письма модератору: /expenses/{id}?intent=approve|reject — см. tickets-back/docs/expenses-frontend.md */
+      { path: ':expenseId', element: <ExpensesPage /> },
     ],
   },
   { path: routes.todo, element: withProtected(<TodoPage />) },

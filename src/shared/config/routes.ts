@@ -30,3 +30,8 @@ export function getProjectDetailUrl(id: string): string {
   return `/time-tracking/project/${id}`
 }
 
+/** Реестр расходов: открыть заявку по id (ссылки из e-mail: `?intent=approve|reject`). */
+export function getExpensesOpenUrl(expenseId: string): string {
+  return `/expenses/${encodeURIComponent(expenseId)}`
+}
+

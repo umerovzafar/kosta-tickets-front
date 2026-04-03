@@ -159,6 +159,22 @@ export async function deleteAttachment(id: string, attId: string): Promise<Expen
   return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
+/** Просмотр вложения в новой вкладке (GET с Bearer через apiFetch). */
+export async function openExpenseAttachmentInNewTab(expenseId: string, attachmentId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/v1/expenses/${encodeURIComponent(expenseId)}/attachments/${encodeURIComponent(attachmentId)}/file`,
+  )
+  await throwIfNotOk(res)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const w = window.open(url, '_blank', 'noopener,noreferrer')
+  if (!w) {
+    URL.revokeObjectURL(url)
+    throw new Error('Браузер заблокировал новую вкладку. Разрешите всплывающие окна для этого сайта.')
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+}
+
 export async function fetchExpenseTypes(): Promise<ExpenseTypeRef[]> {
   const res = await apiFetch('/api/v1/expense-types')
   await throwIfNotOk(res)

@@ -11,7 +11,13 @@ import { EXPENSE_CURRENCIES, EXPENSE_TYPES, PAYMENT_METHODS, STATUS_META } from 
 import { computeUsdEquivalent, needsForeignUsdRate } from '../model/expenseCurrency'
 import { fetchCbuParsedForDate, foreignUnitsPerUsd, type CbuParsed } from '../model/cbuRates'
 import type { ExpenseAmountCurrency } from '../model/types'
-import { approveExpense, rejectExpense, reviseExpense, deleteAttachment } from '../model/expensesApi'
+import {
+  approveExpense,
+  rejectExpense,
+  reviseExpense,
+  deleteAttachment,
+  openExpenseAttachmentInNewTab,
+} from '../model/expensesApi'
 import { asExpenseNumber } from '../model/coerceExpense'
 import { formatExpenseAuthorLabel } from '../model/expenseAuthor'
 
@@ -24,11 +30,39 @@ type Props = {
   onClose: () => void
   onSaveDraft: (values: ExpenseFormValues, files: ExpenseFilesByKind) => void
   onSubmit: (values: ExpenseFormValues, files: ExpenseFilesByKind) => void
+  /** Родитель: идёт сохранение черновика (create/update + вложения). */
+  saveDraftPending?: boolean
+  /** Родитель: идёт отправка на согласование (то же + submit). */
+  submitPending?: boolean
   /** После удаления вложения с сервера — обновить заявку в родителе. */
   onExpenseSnapshotUpdated?: (expense: ExpenseRequest) => void
   /** Партнёр / администратор: кнопки согласования для статуса «На согласовании». */
   canModerate?: boolean
   onExpenseUpdated?: (expense: ExpenseRequest) => void
+  /** Из письма после входа: ?intent=approve|reject — обрабатывается один раз. */
+  emailModerationIntent?: 'approve' | 'reject' | null
+  onEmailModerationIntentConsumed?: () => void
+}
+
+function PanelBtnSpinner({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className ?? 'exp-panel-btn__spinner'}
+      viewBox="0 0 24 24"
+      aria-hidden
+      width={18}
+      height={18}
+    >
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.5" opacity={0.2} />
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        d="M12 3a9 9 0 0 1 9 9"
+      />
+    </svg>
+  )
 }
 
 /** YYYY-MM-DD по локальному времени пользователя (не UTC из toISOString). */
@@ -38,6 +72,13 @@ function todayIsoLocal(): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/** YYYY-MM-DD → DD.MM.YYYY для подписи в форме. */
+function fmtIsoDateRu(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso.trim())
+  if (!m) return iso
+  return `${m[3]}.${m[2]}.${m[1]}`
 }
 
 const EMPTY: ExpenseFormValues = {
@@ -98,6 +139,9 @@ function validate(v: ExpenseFormValues, opts?: ValidateOpts): ExpenseFormErrors 
     } else if (s.length + opts.filesPaymentDoc.length + opts.filesReceipt.length < 1) {
       e.attachmentsPaymentDoc = 'Для возмещаемого расхода нужны вложения'
     }
+    if (v.expenseType === 'other' && !v.comment.trim()) {
+      e.comment = 'Для типа «Прочее» укажите комментарий'
+    }
   }
   return e
 }
@@ -132,15 +176,20 @@ export function ExpensesFormPanel({
   onClose,
   onSaveDraft,
   onSubmit,
+  saveDraftPending = false,
+  submitPending = false,
   onExpenseSnapshotUpdated,
   canModerate = false,
   onExpenseUpdated,
+  emailModerationIntent = null,
+  onEmailModerationIntentConsumed,
 }: Props) {
   const [values, setValues] = useState<ExpenseFormValues>(EMPTY)
   const [errors, setErrors] = useState<ExpenseFormErrors>({})
   const [filesPaymentDoc, setFilesPaymentDoc] = useState<File[]>([])
   const [filesReceipt, setFilesReceipt] = useState<File[]>([])
   const [fileSizeHint, setFileSizeHint] = useState<string | null>(null)
+  const [attachmentOpenErr, setAttachmentOpenErr] = useState<string | null>(null)
   const [cbuParsed, setCbuParsed] = useState<CbuParsed | null>(null)
   const [cbuLoading, setCbuLoading] = useState(false)
   const [cbuError, setCbuError] = useState<string | null>(null)
@@ -237,17 +286,7 @@ export function ExpensesFormPanel({
 
   useEffect(() => {
     if (!isOpen || mode !== 'create') return
-    const iso = values.expenseDate
-    if (!iso) {
-      setCbuLoading(false)
-      setCbuError(null)
-      setCbuParsed(null)
-      setValues(prev => {
-        if (prev.exchangeRate === '' && prev.foreignPerUsd === '') return prev
-        return { ...prev, exchangeRate: '', foreignPerUsd: '' }
-      })
-      return
-    }
+    const iso = todayIsoLocal()
     let cancelled = false
     setCbuLoading(true)
     setCbuError(null)
@@ -263,7 +302,7 @@ export function ExpensesFormPanel({
             const fp = foreignUnitsPerUsd(parsed, prev.amountCurrency)
             if (fp != null && fp > 0) fr = formatForeignFp(fp)
           }
-          return { ...prev, exchangeRate: er, foreignPerUsd: fr }
+          return { ...prev, expenseDate: iso, exchangeRate: er, foreignPerUsd: fr }
         })
       })
       .catch((err) => {
@@ -273,7 +312,7 @@ export function ExpensesFormPanel({
         setCbuError(err instanceof Error ? err.message : 'Не удалось загрузить курс ЦБ')
       })
     return () => { cancelled = true }
-  }, [isOpen, mode, values.expenseDate])
+  }, [isOpen, mode])
 
   useEffect(() => {
     if (!isOpen || mode !== 'create' || !cbuParsed) return
@@ -287,11 +326,15 @@ export function ExpensesFormPanel({
     setValues(prev => (prev.foreignPerUsd === s ? prev : { ...prev, foreignPerUsd: s }))
   }, [isOpen, mode, cbuParsed, values.amountCurrency])
 
+  const formAsyncBusy = saveDraftPending || submitPending
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && isOpen) onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !formAsyncBusy) onClose()
+    }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, formAsyncBusy])
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? 'hidden' : ''
@@ -314,7 +357,11 @@ export function ExpensesFormPanel({
 
   const setReimb = useCallback((val: boolean) => {
     setValues(prev => ({ ...prev, isReimbursable: val }))
-    setErrors(prev => ({ ...prev, isReimbursable: undefined }))
+    setErrors(prev => ({
+      ...prev,
+      isReimbursable: undefined,
+      ...(val === false ? { comment: undefined } : {}),
+    }))
   }, [])
 
   const filesByKind: ExpenseFilesByKind = useMemo(
@@ -322,12 +369,18 @@ export function ExpensesFormPanel({
     [filesPaymentDoc, filesReceipt],
   )
 
+  const valuesForSave = useCallback((): ExpenseFormValues => {
+    if (mode === 'create') return { ...values, expenseDate: todayIsoLocal() }
+    return values
+  }, [mode, values])
+
   const handleSaveDraft = useCallback(() => {
-    onSaveDraft(values, filesByKind)
-  }, [values, filesByKind, onSaveDraft])
+    onSaveDraft(valuesForSave(), filesByKind)
+  }, [valuesForSave, filesByKind, onSaveDraft])
 
   const handleSubmit = useCallback(() => {
-    const errs = validate(values, {
+    const v = valuesForSave()
+    const errs = validate(v, {
       forSubmit: true,
       filesPaymentDoc,
       filesReceipt,
@@ -340,8 +393,8 @@ export function ExpensesFormPanel({
       }, 50)
       return
     }
-    onSubmit(values, filesByKind)
-  }, [values, filesByKind, filesPaymentDoc, filesReceipt, editingRequest?.attachments, onSubmit])
+    onSubmit(v, filesByKind)
+  }, [valuesForSave, filesByKind, filesPaymentDoc, filesReceipt, editingRequest?.attachments, onSubmit])
 
   useEffect(() => {
     if (!isOpen) {
@@ -351,6 +404,7 @@ export function ExpensesFormPanel({
       setReviseComment('')
       setModerationErr(null)
       setModerationBusy(false)
+      setAttachmentOpenErr(null)
     }
   }, [isOpen])
 
@@ -367,6 +421,19 @@ export function ExpensesFormPanel({
       }
     },
     [editingRequest, isView, onExpenseSnapshotUpdated],
+  )
+
+  const handleOpenServerAttachment = useCallback(
+    async (attId: string) => {
+      if (!editingRequest) return
+      setAttachmentOpenErr(null)
+      try {
+        await openExpenseAttachmentInNewTab(editingRequest.id, attId)
+      } catch (e) {
+        setAttachmentOpenErr(e instanceof Error ? e.message : 'Не удалось открыть файл')
+      }
+    },
+    [editingRequest],
   )
 
   const showModerationActions =
@@ -430,6 +497,46 @@ export function ExpensesFormPanel({
       setModerationBusy(false)
     }
   }, [editingRequest, moderationBusy, reviseComment, onExpenseUpdated, onClose])
+
+  const emailIntentHandledRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) {
+      emailIntentHandledRef.current = null
+      return
+    }
+    if (!emailModerationIntent || !editingRequest) return
+    const key = `${editingRequest.id}:${emailModerationIntent}`
+    if (emailIntentHandledRef.current === key) return
+
+    if (!showModerationActions) {
+      const cannotApply =
+        !canModerate || editingRequest.status !== 'pending_approval'
+      if (cannotApply) {
+        emailIntentHandledRef.current = key
+        onEmailModerationIntentConsumed?.()
+      }
+      return
+    }
+
+    emailIntentHandledRef.current = key
+    onEmailModerationIntentConsumed?.()
+
+    if (emailModerationIntent === 'reject') {
+      setRejectOpen(true)
+      return
+    }
+    const ok = window.confirm('Утвердить заявку по ссылке из письма?')
+    if (ok) void handleApprove()
+  }, [
+    isOpen,
+    emailModerationIntent,
+    editingRequest,
+    showModerationActions,
+    canModerate,
+    onEmailModerationIntentConsumed,
+    handleApprove,
+  ])
 
   const title = mode === 'create' ? 'Новая заявка' : mode === 'edit' ? 'Редактировать заявку' : 'Просмотр заявки'
 
@@ -498,9 +605,14 @@ export function ExpensesFormPanel({
       <div
         className={`exp-panel-overlay${isOpen ? ' exp-panel-overlay--open' : ''}`}
         aria-hidden
-        onClick={onClose}
+        onClick={() => { if (!formAsyncBusy) onClose() }}
       />
-      <aside className={`exp-panel${isOpen ? ' exp-panel--open' : ''}`} aria-modal aria-label={title}>
+      <aside
+        className={`exp-panel${isOpen ? ' exp-panel--open' : ''}${formAsyncBusy ? ' exp-panel--async-busy' : ''}`}
+        aria-modal
+        aria-busy={formAsyncBusy}
+        aria-label={title}
+      >
         {/* Header */}
         <div className="exp-panel__hd">
           <div className="exp-panel__hd-left">
@@ -511,7 +623,7 @@ export function ExpensesFormPanel({
             )}
             <h2 className="exp-panel__title">{title}</h2>
           </div>
-          <button type="button" className="exp-panel__close" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="exp-panel__close" onClick={onClose} aria-label="Закрыть" disabled={formAsyncBusy}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -570,18 +682,18 @@ export function ExpensesFormPanel({
           <div className="exp-form-block">
             <p className="exp-form-block__title">Финансы</p>
 
-            <div className={`exp-form-field${errors.expenseDate ? ' exp-form-field--err' : ''}`}>
-              <label className="exp-form-label">Дата <span className="exp-form-req">*</span></label>
-              <input
-                type="date"
-                className="exp-form-input"
-                value={values.expenseDate}
-                onChange={e => set('expenseDate', e.target.value)}
-                disabled={isView}
-              />
-              <p className="exp-form-hint">Курс UZS/USD и кросс-курсы подставляются с cbu.uz на выбранную дату</p>
-              {errors.expenseDate && <p className="exp-form-err-msg" data-err>{errors.expenseDate}</p>}
-            </div>
+            {mode === 'create' && (
+              <p className="exp-form-hint">
+                Дата расхода — сегодняшний день; курс UZS/USD и кросс-курсы подставляются с cbu.uz на эту дату.
+              </p>
+            )}
+
+            {(mode === 'edit' || mode === 'view') && values.expenseDate && (
+              <div className="exp-form-field">
+                <div className="exp-form-label">Дата расхода</div>
+                <p className="exp-form-static">{fmtIsoDateRu(values.expenseDate)}</p>
+              </div>
+            )}
 
             <div className={`exp-form-field${errors.paymentDeadline ? ' exp-form-field--err' : ''}`}>
               <label className="exp-form-label">Конечный срок оплаты</label>
@@ -714,44 +826,59 @@ export function ExpensesFormPanel({
             </div>
           </div>
 
-          {/* Block 3: Additional — visible only when reimbursable */}
-          <div className={`exp-form-collapsible${values.isReimbursable === true ? ' exp-form-collapsible--open' : ''}`}>
-            <div className="exp-form-collapsible__inner">
-              <div className="exp-form-block">
-                <p className="exp-form-block__title">Дополнительно</p>
+          {/* Block 3: Additional — для невозмещаемого расхода поля необязательны */}
+          <div className="exp-form-block">
+            <p className="exp-form-block__title">Дополнительно</p>
+            {values.isReimbursable === false && (
+              <p className="exp-form-hint" style={{ margin: '-0.35rem 0 0 0' }}>
+                Для невозмещаемого расхода этот блок заполнять не требуется
+              </p>
+            )}
+            {values.isReimbursable === true && (
+              <p className="exp-form-hint" style={{ margin: '-0.35rem 0 0 0' }}>
+                Проект и контрагент — по желанию; для типа «Прочее» нужен комментарий
+              </p>
+            )}
 
-                <div className="exp-form-field">
-                  <label className="exp-form-label">Проект</label>
-                  <input
-                    type="text" className="exp-form-input" placeholder="Введите название проекта"
-                    value={values.projectId}
-                    onChange={e => set('projectId', e.target.value)}
-                    disabled={isView}
-                  />
-                </div>
+            <div className="exp-form-field">
+              <label className="exp-form-label">Проект</label>
+              <input
+                type="text" className="exp-form-input" placeholder="Введите название проекта"
+                value={values.projectId}
+                onChange={e => set('projectId', e.target.value)}
+                disabled={isView}
+              />
+            </div>
 
-                <div className="exp-form-field">
-                  <label className="exp-form-label">Контрагент / Поставщик</label>
-                  <input
-                    type="text" className="exp-form-input" placeholder="Организация или ФИО"
-                    value={values.vendor}
-                    onChange={e => set('vendor', e.target.value)}
-                    disabled={isView}
-                  />
-                </div>
+            <div className="exp-form-field">
+              <label className="exp-form-label">Контрагент / Поставщик</label>
+              <input
+                type="text" className="exp-form-input" placeholder="Организация или ФИО"
+                value={values.vendor}
+                onChange={e => set('vendor', e.target.value)}
+                disabled={isView}
+              />
+            </div>
 
-                <div className="exp-form-field">
-                  <label className="exp-form-label">Комментарий</label>
-                  <textarea
-                    className="exp-form-textarea"
-                    placeholder="Дополнительная информация"
-                    value={values.comment}
-                    onChange={e => set('comment', e.target.value)}
-                    disabled={isView}
-                    rows={3}
-                  />
-                </div>
-              </div>
+            <div className={`exp-form-field${errors.comment ? ' exp-form-field--err' : ''}`}>
+              <label className="exp-form-label">
+                Комментарий
+                {values.isReimbursable === true && values.expenseType === 'other' && (
+                  <span className="exp-form-req"> *</span>
+                )}
+              </label>
+              <textarea
+                className="exp-form-textarea"
+                placeholder="Дополнительная информация"
+                value={values.comment}
+                onChange={e => {
+                  set('comment', e.target.value)
+                  if (errors.comment) setErrors(prev => ({ ...prev, comment: undefined }))
+                }}
+                disabled={isView}
+                rows={3}
+              />
+              {errors.comment && <p className="exp-form-err-msg" data-err>{errors.comment}</p>}
             </div>
           </div>
 
@@ -766,6 +893,9 @@ export function ExpensesFormPanel({
 
             {fileSizeHint && (
               <p className="exp-form-err-msg" role="status">{fileSizeHint}</p>
+            )}
+            {attachmentOpenErr && (
+              <p className="exp-form-err-msg" role="alert">{attachmentOpenErr}</p>
             )}
 
             {(() => {
@@ -843,13 +973,20 @@ export function ExpensesFormPanel({
                     {serverPaymentDoc.length > 0 && (
                       <ul className="exp-form-file-list">
                         {serverPaymentDoc.map(f => (
-                          <li key={f.id} className="exp-form-file-item">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="exp-form-file-item__icon">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
-                              <polyline points="14 2 14 8 20 8"/>
-                            </svg>
-                            <span className="exp-form-file-item__name">{f.fileName}</span>
-                            <span className="exp-form-file-item__size">{(f.sizeBytes / 1024).toFixed(0)} КБ</span>
+                          <li key={f.id} className="exp-form-file-item exp-form-file-item--server">
+                            <button
+                              type="button"
+                              className="exp-form-file-item__open"
+                              onClick={() => void handleOpenServerAttachment(f.id)}
+                              aria-label={`Открыть «${f.fileName}»`}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="exp-form-file-item__icon">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                              <span className="exp-form-file-item__name">{f.fileName}</span>
+                              <span className="exp-form-file-item__size">{(f.sizeBytes / 1024).toFixed(0)} КБ</span>
+                            </button>
                             {showServerDelete && (
                               <button
                                 type="button" aria-label="Удалить"
@@ -925,13 +1062,20 @@ export function ExpensesFormPanel({
                     {serverReceipt.length > 0 && (
                       <ul className="exp-form-file-list">
                         {serverReceipt.map(f => (
-                          <li key={f.id} className="exp-form-file-item">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="exp-form-file-item__icon">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
-                              <polyline points="14 2 14 8 20 8"/>
-                            </svg>
-                            <span className="exp-form-file-item__name">{f.fileName}</span>
-                            <span className="exp-form-file-item__size">{(f.sizeBytes / 1024).toFixed(0)} КБ</span>
+                          <li key={f.id} className="exp-form-file-item exp-form-file-item--server">
+                            <button
+                              type="button"
+                              className="exp-form-file-item__open"
+                              onClick={() => void handleOpenServerAttachment(f.id)}
+                              aria-label={`Открыть «${f.fileName}»`}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="exp-form-file-item__icon">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                              <span className="exp-form-file-item__name">{f.fileName}</span>
+                              <span className="exp-form-file-item__size">{(f.sizeBytes / 1024).toFixed(0)} КБ</span>
+                            </button>
                             {showServerDelete && (
                               <button
                                 type="button" aria-label="Удалить"
@@ -954,13 +1098,20 @@ export function ExpensesFormPanel({
                       <label className="exp-form-label">Ранее загруженные вложения</label>
                       <ul className="exp-form-file-list">
                         {serverLegacy.map(f => (
-                          <li key={f.id} className="exp-form-file-item">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="exp-form-file-item__icon">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
-                              <polyline points="14 2 14 8 20 8"/>
-                            </svg>
-                            <span className="exp-form-file-item__name">{f.fileName}</span>
-                            <span className="exp-form-file-item__size">{(f.sizeBytes / 1024).toFixed(0)} КБ</span>
+                          <li key={f.id} className="exp-form-file-item exp-form-file-item--server">
+                            <button
+                              type="button"
+                              className="exp-form-file-item__open"
+                              onClick={() => void handleOpenServerAttachment(f.id)}
+                              aria-label={`Открыть «${f.fileName}»`}
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="exp-form-file-item__icon">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                              <span className="exp-form-file-item__name">{f.fileName}</span>
+                              <span className="exp-form-file-item__size">{(f.sizeBytes / 1024).toFixed(0)} КБ</span>
+                            </button>
                             {showServerDelete && (
                               <button
                                 type="button" aria-label="Удалить"
@@ -990,9 +1141,41 @@ export function ExpensesFormPanel({
         {/* Footer */}
         {!isView ? (
           <div className="exp-panel__ft">
-            <button type="button" className="exp-panel-btn exp-panel-btn--ghost" onClick={onClose}>Отмена</button>
-            <button type="button" className="exp-panel-btn exp-panel-btn--outline" onClick={handleSaveDraft}>Сохранить черновик</button>
-            <button type="button" className="exp-panel-btn exp-panel-btn--primary" onClick={handleSubmit}>Отправить</button>
+            <button type="button" className="exp-panel-btn exp-panel-btn--ghost" onClick={onClose} disabled={formAsyncBusy}>
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="exp-panel-btn exp-panel-btn--outline"
+              onClick={handleSaveDraft}
+              disabled={formAsyncBusy}
+              aria-busy={saveDraftPending}
+            >
+              {saveDraftPending ? (
+                <>
+                  <PanelBtnSpinner />
+                  Сохранение…
+                </>
+              ) : (
+                'Сохранить черновик'
+              )}
+            </button>
+            <button
+              type="button"
+              className="exp-panel-btn exp-panel-btn--primary"
+              onClick={handleSubmit}
+              disabled={formAsyncBusy}
+              aria-busy={submitPending}
+            >
+              {submitPending ? (
+                <>
+                  <PanelBtnSpinner />
+                  Отправка…
+                </>
+              ) : (
+                'Отправить'
+              )}
+            </button>
           </div>
         ) : (
           <div className={`exp-panel__ft${showModerationActions ? ' exp-panel__ft--moderate' : ''}`}>
@@ -1025,6 +1208,14 @@ export function ExpensesFormPanel({
               </div>
             )}
             <button type="button" className="exp-panel-btn exp-panel-btn--outline" onClick={onClose}>Закрыть</button>
+          </div>
+        )}
+        {formAsyncBusy && (
+          <div className="exp-panel__async-busy-layer" role="status" aria-live="polite">
+            <PanelBtnSpinner className="exp-panel__async-busy-spinner" />
+            <span className="exp-panel__async-busy-label">
+              {submitPending ? 'Отправка заявки…' : 'Сохранение черновика…'}
+            </span>
           </div>
         )}
       </aside>

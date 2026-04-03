@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode, type CSSProperties } from 'react'
-import { NavLink } from 'react-router-dom'
-import { routes } from '@shared/config'
+import { NavLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { routes, getExpensesOpenUrl } from '@shared/config'
 import { useCurrentUser, useMediaQuery } from '@shared/hooks'
 import { getSidebarCollapsed, setSidebarCollapsed } from '@shared/lib/sidebarCollapsed'
 import { Sidebar, IconMenu } from '@widgets/sidebar'
@@ -445,9 +445,14 @@ function SkeletonCard() {
 function SkeletonContent() {
   return (
     <>
-      <div className="exp-stats-row" aria-hidden>
-        <SkeletonCell w={80} h={13} />
-        <SkeletonCell w={130} h={13} />
+      <div className="exp-stats-row exp-stats-row--skel" aria-hidden>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="exp-stats-tile exp-stats-tile--skel">
+            <SkeletonCell w="55%" h={10} />
+            <SkeletonCell w="75%" h={20} />
+            <SkeletonCell w={32} h={10} />
+          </div>
+        ))}
       </div>
       <div className="exp-cards exp-cards--grid" aria-busy>
         {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -464,6 +469,9 @@ const PERIOD_LABELS: Record<FilterPeriod, string> = {
 
 function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   const isMobile = useMediaQuery('(max-width: 768px)')
+  const navigate = useNavigate()
+  const { expenseId: pathExpenseId } = useParams<{ expenseId?: string }>()
+  const [searchParams] = useSearchParams()
   const { user } = useCurrentUser()
   /** Очередь на согласование и действия модерации — только администраторы и партнёры */
   const canModerate = canViewExpensesRequestsAndReport(user?.role)
@@ -522,6 +530,20 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [panelMode, setPanelMode] = useState<PanelMode>('create')
   const [editingReq, setEditingReq] = useState<ExpenseRequest | null>(null)
+  const [panelSavePending, setPanelSavePending] = useState(false)
+  const [panelSubmitPending, setPanelSubmitPending] = useState(false)
+  const panelFormActionRef = useRef<'idle' | 'save' | 'submit'>('idle')
+  /** Ссылка из письма: ?intent=approve|reject после входа в SPA */
+  const [emailModerationIntent, setEmailModerationIntent] = useState<'approve' | 'reject' | null>(null)
+  const openedExpensePathRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!isPanelOpen) {
+      panelFormActionRef.current = 'idle'
+      setPanelSavePending(false)
+      setPanelSubmitPending(false)
+    }
+  }, [isPanelOpen])
 
   /** Если микросервис expenses не получил профили из auth, подтягиваем авторов через gateway GET /api/v1/users/:id (как в тикетах). */
   useEffect(() => {
@@ -617,7 +639,55 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
     }
   }, [])
 
-  const handleClosePanel = useCallback(() => setIsPanelOpen(false), [])
+  useEffect(() => {
+    if (!pathExpenseId) {
+      openedExpensePathRef.current = null
+    }
+  }, [pathExpenseId])
+
+  useEffect(() => {
+    if (!pathExpenseId || isLoading) return
+    if (openedExpensePathRef.current === pathExpenseId) return
+
+    let cancelled = false
+    const intentRaw = searchParams.get('intent')
+    const intentParsed = intentRaw === 'approve' || intentRaw === 'reject' ? intentRaw : null
+    const stripSearch = searchParams.toString().length > 0
+
+    ;(async () => {
+      try {
+        const req = await fetchExpenseById(pathExpenseId)
+        if (cancelled) return
+        openedExpensePathRef.current = pathExpenseId
+
+        if (intentParsed && canModerate && req.status === 'pending_approval') {
+          setEmailModerationIntent(intentParsed)
+        } else {
+          setEmailModerationIntent(null)
+        }
+
+        handleOpenReq(req)
+
+        if (stripSearch) {
+          navigate({ pathname: getExpensesOpenUrl(pathExpenseId), search: '' }, { replace: true })
+        }
+      } catch {
+        if (!cancelled) {
+          setActionError('Не удалось открыть заявку по ссылке')
+          navigate(routes.expenses, { replace: true })
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [pathExpenseId, isLoading, searchParams, navigate, handleOpenReq, canModerate])
+
+  const handleClosePanel = useCallback(() => {
+    setIsPanelOpen(false)
+    setEmailModerationIntent(null)
+  }, [])
 
   const applyModerationToList = useCallback(
     (r: ExpenseRequest) => {
@@ -717,6 +787,10 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   const tableModBusy = tableModerationBusyId !== null
 
   const handleSaveDraft = useCallback(async (values: ExpenseFormValues, filesByKind: ExpenseFilesByKind) => {
+    if (panelFormActionRef.current !== 'idle') return
+    panelFormActionRef.current = 'save'
+    setPanelSavePending(true)
+    setActionError(null)
     try {
       const body = formValuesToApiBody(values)
       let saved: ExpenseRequest
@@ -740,10 +814,17 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       setIsPanelOpen(false)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Ошибка при сохранении')
+    } finally {
+      panelFormActionRef.current = 'idle'
+      setPanelSavePending(false)
     }
   }, [editingReq])
 
   const handleSubmit = useCallback(async (values: ExpenseFormValues, filesByKind: ExpenseFilesByKind) => {
+    if (panelFormActionRef.current !== 'idle') return
+    panelFormActionRef.current = 'submit'
+    setPanelSubmitPending(true)
+    setActionError(null)
     try {
       const body = formValuesToApiBody(values)
       let saved: ExpenseRequest
@@ -768,6 +849,9 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       setIsPanelOpen(false)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Ошибка при отправке')
+    } finally {
+      panelFormActionRef.current = 'idle'
+      setPanelSubmitPending(false)
     }
   }, [editingReq])
 
@@ -1016,19 +1100,26 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
             <ServiceUnavailable message={loadError} onRetry={() => setLoadKey(k => k + 1)} />
           ) : (
             <>
-              <div className="exp-stats-row">
-                <span className="exp-stats-count">{filtered.length} заявок</span>
-                {filtered.length > 0 && (
-                  <span className="exp-stats-sum">
-                    {fmtUzs(filteredTotals.uzs)} UZS
-                    {filteredTotals.usd > 0 && (
-                      <>
-                        <span className="exp-stats-sum__sep"> · </span>
-                        <span className="exp-stats-sum__usd">{filteredTotals.usd.toFixed(2)} USD</span>
-                      </>
-                    )}
+              <div className="exp-stats-row" role="region" aria-label="Сводка по списку">
+                <div className="exp-stats-tile">
+                  <span className="exp-stats-tile__label">Заявок в списке</span>
+                  <span className="exp-stats-tile__value">{filtered.length}</span>
+                  <span className="exp-stats-tile__unit">{filtered.length === 1 ? 'заявка' : filtered.length >= 2 && filtered.length <= 4 ? 'заявки' : 'заявок'}</span>
+                </div>
+                <div className="exp-stats-tile">
+                  <span className="exp-stats-tile__label">Сумма, UZS</span>
+                  <span className="exp-stats-tile__value exp-stats-tile__value--uzs">{fmtUzs(filteredTotals.uzs)}</span>
+                  <span className="exp-stats-tile__unit">UZS</span>
+                </div>
+                <div className="exp-stats-tile">
+                  <span className="exp-stats-tile__label">Эквивалент</span>
+                  <span className="exp-stats-tile__value exp-stats-tile__value--usd">
+                    {filteredTotals.usd > 0
+                      ? filteredTotals.usd.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '—'}
                   </span>
-                )}
+                  {filteredTotals.usd > 0 && <span className="exp-stats-tile__unit">USD</span>}
+                </div>
               </div>
 
               {filtered.length === 0 ? (
@@ -1123,12 +1214,16 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
         onClose={handleClosePanel}
         onSaveDraft={handleSaveDraft}
         onSubmit={handleSubmit}
+        saveDraftPending={panelSavePending}
+        submitPending={panelSubmitPending}
         onExpenseSnapshotUpdated={r => {
           setEditingReq(r)
           setRequests(prev => prev.map(x => (x.id === r.id ? r : x)))
         }}
         canModerate={canModerate}
         onExpenseUpdated={handleExpenseUpdated}
+        emailModerationIntent={emailModerationIntent}
+        onEmailModerationIntentConsumed={() => setEmailModerationIntent(null)}
       />
 
       <ExpensesReportModal

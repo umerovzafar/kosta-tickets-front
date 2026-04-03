@@ -117,6 +117,7 @@ export interface ExpenseFormErrors {
   amountUzs?: string
   exchangeRate?: string
   foreignPerUsd?: string
+  comment?: string
   attachmentsPaymentDoc?: string
   attachmentsReceipt?: string
 }
