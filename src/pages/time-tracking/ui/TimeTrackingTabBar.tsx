@@ -1,15 +1,15 @@
 import type { TimeTabId } from '../model/types'
-import { TABS } from '../model/constants'
 
 type TimeTrackingTabBarProps = {
+  tabs: { id: TimeTabId; label: string }[]
   activeTab: TimeTabId
   onTabChange: (id: TimeTabId) => void
 }
 
-export function TimeTrackingTabBar({ activeTab, onTabChange }: TimeTrackingTabBarProps) {
+export function TimeTrackingTabBar({ tabs, activeTab, onTabChange }: TimeTrackingTabBarProps) {
   return (
     <nav className="time-page__tabbar" role="tablist" aria-label="Разделы учёта времени">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"

@@ -11,6 +11,11 @@ dist
 dist-ssr
 *.local
 
+# Секреты и локальные URL API (шаблон — .env.example)
+.env
+.env.*
+!.env.example
+
 .vscode/*
 !.vscode/extensions.json
 .idea

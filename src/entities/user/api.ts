@@ -103,6 +103,28 @@ export async function setTimeTrackingRole(
   return res.json()
 }
 
+/** Самостоятельное изменение нормы часов в неделю (`0 < hours ≤ 168`). См. gateway `PATCH /users/me/weekly-capacity-hours`. */
+export async function patchMyWeeklyCapacityHours(hours: number): Promise<User> {
+  const res = await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ weekly_capacity_hours: hours }),
+  })
+
+  if (res.status === 401) throw new Error('Не авторизован')
+  if (res.status === 400) {
+    const err = await res.json().catch(() => null)
+    throw new Error((err as { detail?: string } | null)?.detail ?? 'Недопустимое значение нормы часов')
+  }
+  if (res.status === 503) throw new Error('Сервис учёта времени недоступен')
+  if (!res.ok) {
+    const err = await res.json().catch(() => null)
+    throw new Error((err as { detail?: string } | null)?.detail ?? 'Не удалось сохранить норму часов')
+  }
+
+  return res.json()
+}
+
 export async function setUserPosition(userId: number, position: string | null): Promise<User> {
   const res = await apiFetch(`/api/v1/users/${userId}/position`, {
     method: 'PATCH',

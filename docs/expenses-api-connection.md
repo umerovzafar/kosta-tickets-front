@@ -42,10 +42,10 @@
 В `.env` фронта (или `.env.production`):
 
 ```env
-VITE_API_URL=https://ticketsback.kostalegal.com
+VITE_API_BASE_URL=https://ticketsback.kostalegal.com
 ```
 
-В коде запросов использовать этот base URL + пути `/api/v1/expenses`, …
+В коде используется общий `getApiBaseUrl()` + пути `/api/v1/expenses`, … (см. `docs/FRONTEND_CONNECTION.md`).
 
 **Вариант B — прокси в `vite.config`**: запросы с dev-сервера идут на `http://127.0.0.1:1234`, в браузере остаётся `localhost:5173` — см. комментарии в `.env.example` бэкенда (`vite.config.example.ts` в корне монорепо, если есть).
 

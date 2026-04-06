@@ -1,3 +1,11 @@
+/**
+ * Базовый URL API для `apiFetch`, OAuth и WebSocket (через тот же хост).
+ *
+ * - Пустой `VITE_API_BASE_URL` → в dev запросы на `/api/v1/...` идут на origin SPA, Vite проксирует `/api` на `VITE_PROXY_TARGET`.
+ * - Задан `VITE_API_BASE_URL` → абсолютный URL gateway (прод или прямой API).
+ *
+ * См. `docs/FRONTEND_CONNECTION.md` и tickets-back `docs/FRONTEND_CONNECTION.md`.
+ */
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL
 
 function normalizeBaseUrl(value: string): string {

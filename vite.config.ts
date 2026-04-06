@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-/** Совпадает с портом gateway по умолчанию; переопределение: `VITE_PROXY_TARGET` в `.env` / `.env.local` */
-const DEFAULT_PROXY_TARGET = 'http://localhost:1234'
+/** Как в tickets-back/docs/FRONTEND_CONNECTION.md; переопределение: `VITE_PROXY_TARGET` в `.env` / `.env.local` */
+const DEFAULT_PROXY_TARGET = 'http://127.0.0.1:1234'
 
 function isCalendarStatusPath(url: string): boolean {
   return url.includes('/todos/calendar/status') || url.includes('calendar/status')

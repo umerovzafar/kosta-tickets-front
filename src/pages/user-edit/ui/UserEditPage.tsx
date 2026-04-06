@@ -1,13 +1,29 @@
-import { useState, useEffect, useId, useRef } from 'react'
+import { useState, useEffect, useId, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   getUser,
   type User,
 } from '@entities/user'
+import {
+  upsertTimeTrackingUser,
+  listHourlyRates,
+  createHourlyRate,
+  patchHourlyRate,
+  deleteHourlyRate,
+  isForbiddenError,
+  type HourlyRateRow,
+} from '@entities/time-tracking'
 import './UserEditPage.css'
 
 type TabId = 'basic' | 'rates' | 'projects'
+
+const TAB_IDS: TabId[] = ['basic', 'rates', 'projects']
+
+function tabFromSearchParam(raw: string | null): TabId {
+  if (raw === 'basic' || raw === 'rates' || raw === 'projects') return raw
+  return 'basic'
+}
 
 type RateType = 'billable' | 'cost'
 type Rate = {
@@ -19,12 +35,17 @@ type Rate = {
   endDate: string | null
 }
 
-function ratesKey(userId: number) { return `uep_rates_${userId}` }
-function loadRates(userId: number): Rate[] {
-  try { return JSON.parse(localStorage.getItem(ratesKey(userId)) ?? '[]') } catch { return [] }
-}
-function saveRates(userId: number, rates: Rate[]) {
-  localStorage.setItem(ratesKey(userId), JSON.stringify(rates))
+function hourlyRowToRate(row: HourlyRateRow): Rate {
+  const type: RateType = row.rate_kind === 'cost' ? 'cost' : 'billable'
+  const amt = typeof row.amount === 'number' ? row.amount : parseFloat(String(row.amount))
+  return {
+    id: row.id,
+    type,
+    amount: Number.isFinite(amt) ? amt : 0,
+    currency: row.currency,
+    startDate: row.valid_from,
+    endDate: row.valid_to,
+  }
 }
 
 type Project = { id: string; name: string; client: string; color: string }
@@ -56,14 +77,18 @@ function saveAssigned(userId: number, list: AssignedProject[]) {
 const CAPACITY_DEFAULT = 35
 const CAPACITY_OPTIONS = [20, 25, 30, 35, 40, 45, 50]
 
-function capacityKey(userId: number) { return `uep_capacity_${userId}` }
-function loadCapacity(userId: number): number {
-  const v = localStorage.getItem(capacityKey(userId))
-  const n = v ? parseInt(v, 10) : NaN
-  return isNaN(n) ? CAPACITY_DEFAULT : n
-}
-function saveCapacity(userId: number, hours: number) {
-  localStorage.setItem(capacityKey(userId), String(hours))
+function capacityStateFromUser(u: User): { capacity: number; capCustom: boolean; capCustomVal: string } {
+  const raw = u.weekly_capacity_hours
+  const n =
+    raw != null && Number.isFinite(Number(raw))
+      ? Number(raw)
+      : CAPACITY_DEFAULT
+  const capCustom = !CAPACITY_OPTIONS.includes(n)
+  return {
+    capacity: n,
+    capCustom,
+    capCustomVal: capCustom ? String(n) : '',
+  }
 }
 
 function getInitials(name: string | null | undefined, email?: string): string {
@@ -87,7 +112,7 @@ function fmtDate(d: string | null): string {
 type RateFormProps = {
   rate?: Rate
   type: RateType
-  onSave: (r: Omit<Rate, 'id'>) => void
+  onSave: (r: Omit<Rate, 'id'>) => void | Promise<void>
   onClose: () => void
 }
 function RateFormModal({ rate, type, onSave, onClose }: RateFormProps) {
@@ -96,12 +121,23 @@ function RateFormModal({ rate, type, onSave, onClose }: RateFormProps) {
   const [startDate, setStartDate]   = useState(rate?.startDate ?? '')
   const [endDate, setEndDate]       = useState(rate?.endDate ?? '')
   const [error, setError]           = useState<string | null>(null)
+  const [saving, setSaving]         = useState(false)
   const uid = useId()
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const amt = parseFloat(amount)
     if (!amount || isNaN(amt) || amt <= 0) { setError('Введите корректную сумму'); return }
-    onSave({ type, amount: amt, currency, startDate: startDate || null, endDate: endDate || null })
+    setError(null)
+    setSaving(true)
+    try {
+      await Promise.resolve(
+        onSave({ type, amount: amt, currency, startDate: startDate || null, endDate: endDate || null }),
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -152,10 +188,10 @@ function RateFormModal({ rate, type, onSave, onClose }: RateFormProps) {
           </div>
         </div>
         <div className="uep__modal-foot">
-          <button type="button" className="uep__btn uep__btn--primary" onClick={handleSubmit}>
-            {rate ? 'Сохранить' : 'Добавить'}
+          <button type="button" className="uep__btn uep__btn--primary" disabled={saving} onClick={() => void handleSubmit()}>
+            {saving ? 'Сохранение…' : rate ? 'Сохранить' : 'Добавить'}
           </button>
-          <button type="button" className="uep__btn uep__btn--ghost" onClick={onClose}>Отмена</button>
+          <button type="button" className="uep__btn uep__btn--ghost" disabled={saving} onClick={onClose}>Отмена</button>
         </div>
       </div>
     </div>
@@ -165,14 +201,31 @@ function RateFormModal({ rate, type, onSave, onClose }: RateFormProps) {
 export function UserEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [user, setUser]           = useState<User | null>(null)
   const [loading, setLoading]     = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<TabId>('basic')
+
+  const activeTab = tabFromSearchParam(searchParams.get('tab'))
+
+  const selectTab = (tab: TabId) => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        if (tab === 'basic') p.delete('tab')
+        else p.set('tab', tab)
+        return p
+      },
+      { replace: true },
+    )
+  }
 
   const [rates, setRates]         = useState<Rate[]>([])
   const [rateModal, setRateModal] = useState<{ type: RateType; rate?: Rate } | null>(null)
+  const [ratesLoading, setRatesLoading] = useState(false)
+  const [ratesError, setRatesError] = useState<string | null>(null)
+  const [costRatesForbidden, setCostRatesForbidden] = useState(false)
 
   const [assigned, setAssigned]           = useState<AssignedProject[]>([])
   const [projectSearch, setProjectSearch] = useState('')
@@ -183,6 +236,8 @@ export function UserEditPage() {
   const [capCustom,    setCapCustom]    = useState(false)
   const [capCustomVal, setCapCustomVal] = useState('')
   const [capSaved,     setCapSaved]     = useState(false)
+  const [capSaving,    setCapSaving]    = useState(false)
+  const [capError,     setCapError]     = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -191,58 +246,136 @@ export function UserEditPage() {
     getUser(Number(id))
       .then((u) => {
         setUser(u)
-        setRates(loadRates(u.id))
+        setRates([])
+        setRatesError(null)
+        setCostRatesForbidden(false)
         setAssigned(loadAssigned(u.id))
-        const cap = loadCapacity(u.id)
-        setCapacity(cap)
-        setCapCustom(!CAPACITY_OPTIONS.includes(cap))
-        setCapCustomVal(!CAPACITY_OPTIONS.includes(cap) ? String(cap) : '')
+        const capSt = capacityStateFromUser(u)
+        setCapacity(capSt.capacity)
+        setCapCustom(capSt.capCustom)
+        setCapCustomVal(capSt.capCustomVal)
+        setCapError(null)
       })
       .catch((e: unknown) => setFetchError((e as Error).message ?? 'Ошибка загрузки'))
       .finally(() => setLoading(false))
   }, [id])
 
-  function handleCapacityChange(val: string) {
+  useEffect(() => {
+    const raw = searchParams.get('tab')
+    if (raw != null && !TAB_IDS.includes(raw as TabId)) {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.delete('tab')
+          return p
+        },
+        { replace: true },
+      )
+    }
+  }, [searchParams, setSearchParams])
+
+  const refreshRates = useCallback(async () => {
+    if (!user) return
+    setRatesLoading(true)
+    setRatesError(null)
+    try {
+      await upsertTimeTrackingUser(user)
+      const billableRows = await listHourlyRates(user.id, 'billable')
+      let costRows: HourlyRateRow[] = []
+      let costForbidden = false
+      try {
+        costRows = await listHourlyRates(user.id, 'cost')
+      } catch (e) {
+        if (isForbiddenError(e)) costForbidden = true
+        else throw e
+      }
+      setCostRatesForbidden(costForbidden)
+      setRates([...billableRows.map(hourlyRowToRate), ...costRows.map(hourlyRowToRate)])
+    } catch (e) {
+      setRates([])
+      setRatesError(e instanceof Error ? e.message : 'Не удалось загрузить ставки')
+    } finally {
+      setRatesLoading(false)
+    }
+  }, [user])
+
+  const persistCapacityHours = useCallback(
+    async (hours: number) => {
+      if (!user) return
+      if (hours <= 0 || hours > 168) return
+      setCapError(null)
+      setCapSaving(true)
+      try {
+        await upsertTimeTrackingUser(user, { weeklyCapacityHours: hours })
+        setUser((prev) => (prev ? { ...prev, weekly_capacity_hours: hours } : null))
+        setCapSaved(true)
+        setTimeout(() => setCapSaved(false), 2000)
+      } catch (e) {
+        setCapError(e instanceof Error ? e.message : 'Не удалось сохранить')
+      } finally {
+        setCapSaving(false)
+      }
+    },
+    [user],
+  )
+
+  useEffect(() => {
+    if (!user || activeTab !== 'rates') return
+    void refreshRates()
+  }, [user?.id, activeTab, refreshRates])
+
+  async function handleCapacityChange(val: string) {
     if (val === '__custom__') {
       setCapCustom(true)
       setCapCustomVal('')
-    } else {
-      setCapCustom(false)
-      const n = parseInt(val, 10)
-      setCapacity(n)
-      if (user) saveCapacity(user.id, n)
-      setCapSaved(true)
-      setTimeout(() => setCapSaved(false), 2000)
+      return
     }
+    setCapCustom(false)
+    const n = parseInt(val, 10)
+    if (isNaN(n) || n <= 0 || n > 168) return
+    setCapacity(n)
+    await persistCapacityHours(n)
   }
 
-  function handleCapCustomSave() {
+  async function handleCapCustomSave() {
     const n = parseInt(capCustomVal, 10)
     if (isNaN(n) || n <= 0 || n > 168) return
     setCapacity(n)
-    if (user) saveCapacity(user.id, n)
-    setCapSaved(true)
-    setTimeout(() => setCapSaved(false), 2000)
+    await persistCapacityHours(n)
   }
 
-  const handleSaveRate = (data: Omit<Rate, 'id'>) => {
+  const handleSaveRate = async (data: Omit<Rate, 'id'>) => {
     if (!user) return
-    let next: Rate[]
+    const rateKind = data.type === 'cost' ? 'cost' : 'billable'
     if (rateModal?.rate) {
-      next = rates.map((r) => r.id === rateModal.rate!.id ? { ...r, ...data } : r)
+      await patchHourlyRate(user.id, rateModal.rate.id, {
+        amount: String(data.amount),
+        currency: data.currency,
+        validFrom: data.startDate,
+        validTo: data.endDate,
+      })
     } else {
-      next = [...rates, { ...data, id: `r_${Date.now()}` }]
+      await createHourlyRate(user.id, {
+        rateKind,
+        amount: String(data.amount),
+        currency: data.currency,
+        validFrom: data.startDate,
+        validTo: data.endDate,
+      })
     }
-    setRates(next)
-    saveRates(user.id, next)
     setRateModal(null)
+    await refreshRates()
   }
 
-  const handleDeleteRate = (rateId: string) => {
+  const handleDeleteRate = async (rateId: string) => {
     if (!user) return
-    const next = rates.filter((r) => r.id !== rateId)
-    setRates(next)
-    saveRates(user.id, next)
+    setRatesError(null)
+    try {
+      await deleteHourlyRate(user.id, rateId)
+      await refreshRates()
+    } catch (e) {
+      setRatesError(e instanceof Error ? e.message : 'Не удалось удалить ставку')
+    }
   }
 
   const assignProject = (projId: string) => {
@@ -407,7 +540,7 @@ export function UserEditPage() {
                 key={t.id}
                 type="button"
                 className={`uep__nav-item${activeTab === t.id ? ' uep__nav-item--active' : ''}`}
-                onClick={() => setActiveTab(t.id)}
+                onClick={() => selectTab(t.id)}
               >
                 <span className="uep__nav-icon">{t.icon}</span>
                 <span className="uep__nav-label">{t.label}</span>
@@ -477,7 +610,8 @@ export function UserEditPage() {
                       <select
                         className="uep__cap-select"
                         value={capCustom ? '__custom__' : String(capacity)}
-                        onChange={e => handleCapacityChange(e.target.value)}
+                        disabled={capSaving}
+                        onChange={(e) => void handleCapacityChange(e.target.value)}
                       >
                         {CAPACITY_OPTIONS.map(h => (
                           <option key={h} value={String(h)}>
@@ -498,10 +632,15 @@ export function UserEditPage() {
                           placeholder="напр. 32"
                           value={capCustomVal}
                           onChange={e => setCapCustomVal(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && handleCapCustomSave()}
+                          onKeyDown={(e) => e.key === 'Enter' && void handleCapCustomSave()}
                         />
-                        <button type="button" className="uep__cap-save-btn" onClick={handleCapCustomSave}>
-                          Сохранить
+                        <button
+                          type="button"
+                          className="uep__cap-save-btn"
+                          disabled={capSaving}
+                          onClick={() => void handleCapCustomSave()}
+                        >
+                          {capSaving ? 'Сохранение…' : 'Сохранить'}
                         </button>
                       </div>
                     )}
@@ -516,6 +655,16 @@ export function UserEditPage() {
                     )}
                   </div>
                   <p className="uep__cap-hint">Количество часов в неделю, которые сотрудник доступен для работы.</p>
+                  {user.weekly_capacity_hours == null && (
+                    <p className="uep__hint" style={{ marginTop: '0.35rem' }}>
+                      В сервисе учёта времени норма ещё не задана; до сохранения показано значение по умолчанию ({CAPACITY_DEFAULT} ч).
+                    </p>
+                  )}
+                  {capError && (
+                    <p className="uep__field-error" role="alert" style={{ marginTop: '0.5rem' }}>
+                      {capError}
+                    </p>
+                  )}
                 </div>
 
               </div>
@@ -531,10 +680,16 @@ export function UserEditPage() {
                 </div>
                 <div className="uep__section-head-text">
                   <h1 className="uep__section-title">{first ? `${first}'s default rates` : 'Ставки'}</h1>
-                  <p className="uep__section-desc">Почасовые ставки применяются к проектам, где используется ставка по умолчанию.</p>
+                  <p className="uep__section-desc">Почасовые ставки применяются к проектам, где используется ставка по умолчанию. Данные хранятся в сервисе учёта времени.</p>
                 </div>
               </div>
               <div className="uep__form">
+                {ratesError && (
+                  <p className="uep__field-error" role="alert" style={{ marginBottom: '1rem' }}>{ratesError}</p>
+                )}
+                {ratesLoading && (
+                  <p className="uep__rates-desc" role="status">Загрузка ставок…</p>
+                )}
 <div className="uep__rates-block">
                   <div className="uep__rates-header">
                     <div>
@@ -544,7 +699,7 @@ export function UserEditPage() {
                         Только администраторы и менеджеры видят суммы.
                       </p>
                     </div>
-                    <button type="button" className="uep__btn uep__btn--add" onClick={() => setRateModal({ type: 'billable' })}>
+                    <button type="button" className="uep__btn uep__btn--add" disabled={ratesLoading} onClick={() => setRateModal({ type: 'billable' })}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                       Новая ставка
                     </button>
@@ -568,7 +723,7 @@ export function UserEditPage() {
                               <td className="uep__rate-date">{r.endDate   ? fmtDate(r.endDate)   : <span className="uep__rate-all">Без конца</span>}</td>
                               <td className="uep__rate-actions">
                                 <button type="button" className="uep__rate-btn" onClick={() => setRateModal({ type: 'billable', rate: r })}>Изменить</button>
-                                <button type="button" className="uep__rate-btn uep__rate-btn--del" onClick={() => handleDeleteRate(r.id)}>Удалить</button>
+                                <button type="button" className="uep__rate-btn uep__rate-btn--del" onClick={() => void handleDeleteRate(r.id)}>Удалить</button>
                               </td>
                             </tr>
                           ))}
@@ -581,6 +736,14 @@ export function UserEditPage() {
                 </div>
 
                 <div className="uep__divider" />
+{costRatesForbidden ? (
+                  <div className="uep__rates-block">
+                    <h2 className="uep__rates-title">Ставки себестоимости</h2>
+                    <p className="uep__rates-empty" style={{ marginTop: '0.5rem' }}>
+                      Просмотр и редактирование ставок себестоимости доступны только главному администратору и администратору.
+                    </p>
+                  </div>
+                ) : (
 <div className="uep__rates-block">
                   <div className="uep__rates-header">
                     <div>
@@ -590,7 +753,7 @@ export function UserEditPage() {
                         Видны только администраторам.
                       </p>
                     </div>
-                    <button type="button" className="uep__btn uep__btn--add" onClick={() => setRateModal({ type: 'cost' })}>
+                    <button type="button" className="uep__btn uep__btn--add" disabled={ratesLoading} onClick={() => setRateModal({ type: 'cost' })}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                       Новая ставка
                     </button>
@@ -614,7 +777,7 @@ export function UserEditPage() {
                               <td className="uep__rate-date">{r.endDate   ? fmtDate(r.endDate)   : <span className="uep__rate-all">Без конца</span>}</td>
                               <td className="uep__rate-actions">
                                 <button type="button" className="uep__rate-btn" onClick={() => setRateModal({ type: 'cost', rate: r })}>Изменить</button>
-                                <button type="button" className="uep__rate-btn uep__rate-btn--del" onClick={() => handleDeleteRate(r.id)}>Удалить</button>
+                                <button type="button" className="uep__rate-btn uep__rate-btn--del" onClick={() => void handleDeleteRate(r.id)}>Удалить</button>
                               </td>
                             </tr>
                           ))}
@@ -625,6 +788,7 @@ export function UserEditPage() {
                     <div className="uep__rates-empty">Нет ставок себестоимости</div>
                   )}
                 </div>
+                )}
 
               </div>
             </div>

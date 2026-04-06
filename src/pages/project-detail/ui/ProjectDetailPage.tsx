@@ -1,5 +1,8 @@
 import { useState, useMemo, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Navigate } from 'react-router-dom'
+import { routes } from '@shared/config'
+import { useCurrentUser } from '@shared/hooks'
+import { canAccessTimeTracking } from '@pages/time-tracking/model/timeTrackingAccess'
 import {
   ResponsiveContainer,
   LineChart, Line,
@@ -416,12 +419,18 @@ const TYPE_COLOR: Record<string, { color: string; bg: string }> = {
 export function ProjectDetailPage() {
   const { id }    = useParams<{ id: string }>()
   const navigate  = useNavigate()
+  const { user, loading: userLoading } = useCurrentUser()
   const [chartTab,    setChartTab]    = useState<'progress' | 'hours'>('progress')
   const [actionsOpen, setActionsOpen] = useState(false)
   const [hoverIdx,    setHoverIdx]    = useState<number | null>(null)
   const [detailTab,   setDetailTab]   = useState<DetailTabId>('tasks')
 
   const project = MOCK_PROJECTS.find(p => p.id === id)
+
+  if (userLoading) return null
+  if (!canAccessTimeTracking(user)) {
+    return <Navigate to={routes.timeTracking} replace />
+  }
 
   if (!project) {
     return (

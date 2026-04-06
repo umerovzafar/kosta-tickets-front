@@ -6,6 +6,7 @@ import { logout } from '@shared/lib'
 import { applyTheme, getInitialTheme, type AppTheme } from '@shared/lib/theme'
 import { useCurrentUser } from '@shared/hooks'
 import { canAccessExpensesSection } from '@pages/expenses/model/expenseModeration'
+import { canAccessTimeTracking } from '@pages/time-tracking/model/timeTrackingAccess'
 import {
   IconTicket,
   IconHome,
@@ -100,6 +101,10 @@ export function Sidebar({
 
   if (!loading && !canAccessExpensesSection(user?.role)) {
     visibleNavItems = visibleNavItems.filter((item) => item.label !== 'Расходы')
+  }
+
+  if (!loading && !canAccessTimeTracking(user)) {
+    visibleNavItems = visibleNavItems.filter((item) => item.label !== 'Учёт времени')
   }
 
   const sidebarContent = (
