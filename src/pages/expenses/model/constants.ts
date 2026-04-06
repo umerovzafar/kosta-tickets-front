@@ -1,8 +1,22 @@
 import type { ExpenseAmountCurrency, ExpenseStatus, ExpenseType, PaymentMethod } from './types'
 
-/** Статусы заявок на странице «Расходы компании» (/expenses): согласованные, отклонённые и завершённые. */
-export const EXPENSE_REGISTRY_STATUSES: ExpenseStatus[] = ['approved', 'rejected', 'paid', 'closed']
+/**
+ * Все статусы для фильтра и отображения в списке /expenses
+ * (см. tickets-back/docs/expenses-frontend-statuses.md).
+ */
+export const EXPENSE_REGISTRY_STATUSES: ExpenseStatus[] = [
+  'draft',
+  'pending_approval',
+  'revision_required',
+  'approved',
+  'rejected',
+  'paid',
+  'closed',
+  'not_reimbursable',
+  'withdrawn',
+]
 
+/** Множество всех статусов для фильтрации списка на /expenses. */
 export const EXPENSE_REGISTRY_STATUS_SET = new Set<ExpenseStatus>(EXPENSE_REGISTRY_STATUSES)
 
 export const STATUS_META: Record<ExpenseStatus, { label: string }> = {

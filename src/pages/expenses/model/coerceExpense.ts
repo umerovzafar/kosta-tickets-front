@@ -40,10 +40,13 @@ export function normalizeExpenseRequest(r: ExpenseRequest): ExpenseRequest {
     asExpenseNumber(pickNumericField(x, 'createdByUserId', 'created_by_user_id'), r.createdByUserId ?? 0),
   )
   const createdBy = normalizeCreatedBy(x.createdBy ?? x.created_by, createdByUserId)
+  const reimbRaw = x.isReimbursable ?? x.is_reimbursable
+  const isReimbursable = reimbRaw === true || reimbRaw === 'true'
   return {
     ...r,
     createdByUserId: Number.isFinite(createdByUserId) ? createdByUserId : r.createdByUserId,
     createdBy,
+    isReimbursable,
     amountUzs: asExpenseNumber(pickNumericField(x, 'amountUzs', 'amount_uzs')),
     exchangeRate: asExpenseNumber(pickNumericField(x, 'exchangeRate', 'exchange_rate')),
     equivalentAmount: asExpenseNumber(pickNumericField(x, 'equivalentAmount', 'equivalent_amount')),

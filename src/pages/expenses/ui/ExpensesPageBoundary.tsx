@@ -4,9 +4,7 @@ import './ExpensesPage.css'
 type Props = { children: ReactNode }
 type State = { error: Error | null }
 
-/**
- * Ловит любой сбой рендера внутри страницы расходов (в т.ч. из-за старого закэшированного бандла).
- */
+
 export class ExpensesPageBoundary extends Component<Props, State> {
   state: State = { error: null }
 

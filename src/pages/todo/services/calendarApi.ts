@@ -3,20 +3,22 @@ import { getAccessToken } from '@shared/lib'
 
 /**
  * URL к эндпоинтам todos (календарь) на gateway.
- * В `vite dev` (порт 5173) — относительный /api через proxy; иначе cross-origin на :1234
- * и HTTP-редирект на login.microsoftonline.com внутри fetch даёт CORS.
+ * Если задан `VITE_API_BASE_URL` (например https://ticketsback.kostalegal.com) — всегда он,
+ * чтобы в dev OAuth шёл на тот же хост, что и `.../todos/calendar/callback` на сервере.
+ * Иначе в `vite dev` на :5173 — относительный `/api` через прокси на локальный gateway.
  */
 function todosApiUrl(path: string): string {
   const normalized = path.replace(/^\//, '')
   const rel = `/api/v1/todos/${normalized}`
 
+  const base = getApiBaseUrl().replace(/\/+$/, '')
+  if (base) return `${base}${rel}`
+
   if (import.meta.env.DEV && typeof window !== 'undefined' && window.location.port === '5173') {
     return rel
   }
 
-  const base = getApiBaseUrl().replace(/\/+$/, '')
-  if (!base) return rel
-  return `${base}${rel}`
+  return rel
 }
 
 /** Единое сообщение: календарь недоступен или не связан с аккаунтом (сброс состояния во UI). */
@@ -105,15 +107,27 @@ export async function connectOutlookCalendar(): Promise<void> {
   throw new Error(detail ?? 'Не удалось начать подключение календаря')
 }
 
-export async function getCalendarStatus(): Promise<{ connected: boolean }> {
+export type CalendarStatusResult = { connected: boolean; detail?: string }
+
+export async function getCalendarStatus(): Promise<CalendarStatusResult> {
   const res = await fetch(todosApiUrl('calendar/status'), {
-    headers: authHeaders(),
+    headers: {
+      ...authHeaders(),
+      Accept: 'application/json',
+    },
     credentials: 'include',
   })
   if (res.status === 401) throw new Error('Требуется авторизация')
-  if (res.status === 503) return { connected: false }
-  if (!res.ok) return { connected: false }
-  return res.json()
+  if (!res.ok) {
+    const body = await parseBody(res)
+    const detail = typeof body?.detail === 'string' ? body.detail : undefined
+    return { connected: false, detail }
+  }
+  const data = (await res.json()) as { connected?: boolean; detail?: unknown }
+  return {
+    connected: !!data?.connected,
+    detail: typeof data?.detail === 'string' ? data.detail : undefined,
+  }
 }
 
 export async function getCalendarEvents(

@@ -83,6 +83,9 @@ export interface ExpenseRequest {
   approvedAt: string | null
   rejectedAt: string | null
   paidAt: string | null
+  /** Кто отметил заявку оплаченной (после POST …/pay). */
+  paidByUserId?: number | null
+  paidBy?: ExpenseCreatedBy
   closedAt: string | null
   withdrawnAt: string | null
   attachmentsCount: number
@@ -94,7 +97,8 @@ export interface ExpenseFormValues {
   expenseDate: string
   paymentDeadline: string
   expenseType: string
-  isReimbursable: boolean | null
+  /** По умолчанию в форме создания — false (невозмещаемый). */
+  isReimbursable: boolean
   /** Валюта поля «Сумма». */
   amountCurrency: ExpenseAmountCurrency
   /** Единиц выбранной валюты за 1 USD (нужно для RUB, GBP, EUR). */

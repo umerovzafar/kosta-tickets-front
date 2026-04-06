@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { ExpenseRequest, ExpenseStatus, ExpenseType, PaymentMethod } from '../model/types'
 import { EXPENSE_TYPES, PAYMENT_METHODS, STATUS_META } from '../model/constants'
 import {
@@ -165,7 +166,7 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
     return true
   }).length
 
-  return (
+  const modal = (
     <>
       <div className="rep-overlay" aria-hidden onClick={onClose} />
       <div className="rep-modal" role="dialog" aria-modal aria-labelledby="rep-modal-title">
@@ -338,4 +339,6 @@ export function ExpensesReportModal({ isOpen, requests, onClose }: Props) {
       </div>
     </>
   )
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : null
 }

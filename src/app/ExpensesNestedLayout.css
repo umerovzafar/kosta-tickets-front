@@ -5,7 +5,8 @@
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow-x: clip;
+  /* не clip: иначе ломается отрисовка position:fixed у потомков до портала */
+  overflow-x: visible;
 }
 
 .expenses-route-view {

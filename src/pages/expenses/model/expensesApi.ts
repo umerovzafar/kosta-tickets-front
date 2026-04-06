@@ -34,7 +34,7 @@ async function throwIfNotOk(res: Response): Promise<Response> {
   return res
 }
 
-export async function fetchExpenses(params: ListParams = {}): Promise<ListResponse> {
+export async function fetchExpenses(params: ListParams = {}, init?: RequestInit): Promise<ListResponse> {
   const qs = new URLSearchParams()
   if (params.status)                    qs.set('status', params.status)
   if (params.expenseType)               qs.set('expenseType', params.expenseType)
@@ -47,7 +47,7 @@ export async function fetchExpenses(params: ListParams = {}): Promise<ListRespon
   if (params.skip !== undefined)        qs.set('skip', String(params.skip))
   if (params.limit !== undefined)       qs.set('limit', String(params.limit))
   const query = qs.toString()
-  const res = await apiFetch(`/api/v1/expenses${query ? `?${query}` : ''}`)
+  const res = await apiFetch(`/api/v1/expenses${query ? `?${query}` : ''}`, init ?? {})
   await throwIfNotOk(res)
   const j = await res.json() as ListResponse
   return { ...j, items: j.items.map(normalizeExpenseRequest) }
@@ -129,7 +129,21 @@ export async function fetchExpenseById(id: string): Promise<ExpenseRequest> {
 }
 
 export async function withdrawExpense(id: string): Promise<ExpenseRequest> {
-  const res = await apiFetch(`/api/v1/expenses/${id}/withdraw`, { method: 'POST' })
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/withdraw`, { method: 'POST' })
+  await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
+}
+
+/** Оплата/выплата: одобренная заявка, роль модерации (см. POST …/pay; допускается и для невозмещаемых). */
+export async function payExpense(id: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/pay`, { method: 'POST' })
+  await throwIfNotOk(res)
+  return normalizeExpenseRequest(await res.json() as ExpenseRequest)
+}
+
+/** Закрытие / перевод в not_reimbursable — роль модерации (см. POST …/close). */
+export async function closeExpense(id: string): Promise<ExpenseRequest> {
+  const res = await apiFetch(`/api/v1/expenses/${encodeURIComponent(id)}/close`, { method: 'POST' })
   await throwIfNotOk(res)
   return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
@@ -159,13 +173,23 @@ export async function deleteAttachment(id: string, attId: string): Promise<Expen
   return normalizeExpenseRequest(await res.json() as ExpenseRequest)
 }
 
-/** Просмотр вложения в новой вкладке (GET с Bearer через apiFetch). */
-export async function openExpenseAttachmentInNewTab(expenseId: string, attachmentId: string): Promise<void> {
+/** Скачать файл вложения (GET с Bearer). Вызывающий может создать object URL для превью. */
+export async function fetchExpenseAttachmentBlob(
+  expenseId: string,
+  attachmentId: string,
+): Promise<{ blob: Blob; contentType: string | null }> {
   const res = await apiFetch(
     `/api/v1/expenses/${encodeURIComponent(expenseId)}/attachments/${encodeURIComponent(attachmentId)}/file`,
   )
   await throwIfNotOk(res)
+  const contentType = res.headers.get('Content-Type')
   const blob = await res.blob()
+  return { blob, contentType }
+}
+
+/** Просмотр вложения в новой вкладке (GET с Bearer через apiFetch). */
+export async function openExpenseAttachmentInNewTab(expenseId: string, attachmentId: string): Promise<void> {
+  const { blob } = await fetchExpenseAttachmentBlob(expenseId, attachmentId)
   const url = URL.createObjectURL(blob)
   const w = window.open(url, '_blank', 'noopener,noreferrer')
   if (!w) {

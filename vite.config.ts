@@ -1,35 +1,63 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 
-export default defineConfig({
-  plugins: [react()],
-  define: {
-    global: 'globalThis',
-  },
-  resolve: {
-    alias: {
-      '@app': path.resolve(__dirname, './src/app'),
-      '@pages': path.resolve(__dirname, './src/pages'),
-      '@widgets': path.resolve(__dirname, './src/widgets'),
-      '@features': path.resolve(__dirname, './src/features'),
-      '@entities': path.resolve(__dirname, './src/entities'),
-      '@shared': path.resolve(__dirname, './src/shared'),
-      buffer: 'buffer',
+/** Совпадает с портом gateway по умолчанию; переопределение: `VITE_PROXY_TARGET` в `.env` / `.env.local` */
+const DEFAULT_PROXY_TARGET = 'http://localhost:1234'
+
+function isCalendarStatusPath(url: string): boolean {
+  return url.includes('/todos/calendar/status') || url.includes('calendar/status')
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const proxyTarget = (env.VITE_PROXY_TARGET || DEFAULT_PROXY_TARGET).replace(/\/$/, '')
+
+  return {
+    plugins: [react()],
+    define: {
+      global: 'globalThis',
     },
-  },
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:1234',
-        changeOrigin: true,
-      },
-      '/cbu-json': {
-        target: 'https://cbu.uz',
-        changeOrigin: true,
-        secure: true,
-        rewrite: p => p.replace(/^\/cbu-json/, ''),
+    resolve: {
+      alias: {
+        '@app': path.resolve(__dirname, './src/app'),
+        '@pages': path.resolve(__dirname, './src/pages'),
+        '@widgets': path.resolve(__dirname, './src/widgets'),
+        '@features': path.resolve(__dirname, './src/features'),
+        '@entities': path.resolve(__dirname, './src/entities'),
+        '@shared': path.resolve(__dirname, './src/shared'),
+        buffer: 'buffer',
       },
     },
-  },
+    server: {
+      proxy: {
+        '/api': {
+          target: proxyTarget,
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('error', (_err, req, res) => {
+              const sr = res as ServerResponse | undefined
+              if (!sr || typeof sr.writeHead !== 'function' || sr.headersSent) return
+              const url = (req as IncomingMessage).url ?? ''
+              const detail =
+                `API шлюза недоступен (прокси Vite). Запустите gateway на ${proxyTarget}.`
+              const payload: Record<string, unknown> = { detail }
+              if (isCalendarStatusPath(url)) {
+                payload.connected = false
+              }
+              sr.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' })
+              sr.end(JSON.stringify(payload))
+            })
+          },
+        },
+        '/cbu-json': {
+          target: 'https://cbu.uz',
+          changeOrigin: true,
+          secure: true,
+          rewrite: p => p.replace(/^\/cbu-json/, ''),
+        },
+      },
+    },
+  }
 })

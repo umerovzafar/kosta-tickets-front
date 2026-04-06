@@ -1,10 +1,12 @@
 import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { routes, getExpensesOpenUrl } from '@shared/config'
 import { useCurrentUser, useMediaQuery } from '@shared/hooks'
 import { getSidebarCollapsed, setSidebarCollapsed } from '@shared/lib/sidebarCollapsed'
 import { Sidebar, IconMenu } from '@widgets/sidebar'
 import { ExpensesFormPanel, type PanelMode } from './ExpensesFormPanel'
+import { ExpenseConfirmDialog } from './ExpenseConfirmDialog'
 import { ExpensesReportModal } from './ExpensesReportModal'
 import type {
   ExpenseRequest,
@@ -22,26 +24,36 @@ import {
   REIMBURSABLE_META,
 } from '../model/constants'
 import {
+  approveExpense,
+  payExpense,
+  closeExpense,
   fetchExpenses,
   fetchExpenseById,
   createExpense,
   updateExpense,
   submitExpense,
   uploadAttachment,
-  approveExpense,
   rejectExpense,
   reviseExpense,
 } from '../model/expensesApi'
 import { computeAmountUzsForApi } from '../model/expenseCurrency'
+import { buildExpensesListParams } from '../model/expensesListParams'
 import { asExpenseNumber, normalizeExpenseRequest } from '../model/coerceExpense'
 import { getUser } from '@entities/user'
 import {
-  expenseAuthorSearchText,
   formatExpenseAuthorLabel,
   mergeExpenseAuthorFromCache,
   needsAuthorEnrichment,
 } from '../model/expenseAuthor'
 import { canViewExpensesRequestsAndReport } from '../model/expenseModeration'
+import {
+  getCloseExpenseUi,
+  isModerationBlockedForOwnExpense,
+  showOwnPendingModerationBlockedHint,
+  resolveExpensePanelMode,
+  showPayExpenseAction,
+  showPendingApprovalModeration,
+} from '../model/expenseStatusPolicy'
 import { ExpensesPageBoundary } from './ExpensesPageBoundary'
 import './ExpensesPage.css'
 
@@ -49,21 +61,14 @@ export type ExpensesPageVariant = 'default' | 'moderationQueue'
 
 export type ExpensesPageProps = { variant?: ExpensesPageVariant }
 
+type TableConfirmState =
+  | null
+  | { kind: 'approve'; req: ExpenseRequest }
+  | { kind: 'pay'; req: ExpenseRequest }
+  | { kind: 'close'; req: ExpenseRequest; message: string; confirmLabel: string }
+
 type FilterPeriod = 'all' | 'today' | 'week' | 'month'
 type ActiveFilter = 'status' | 'type' | 'reimbursable' | 'period' | null
-
-const TODAY = new Date().toISOString().slice(0, 10)
-
-function getWeekStart() {
-  const d = new Date()
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-  return d.toISOString().slice(0, 10)
-}
-
-function getMonthStart() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-}
 
 function fmtDate(iso: string) {
   if (!iso) return '—'
@@ -108,7 +113,7 @@ function formValuesToApiBody(values: ExpenseFormValues) {
     ),
     exchangeRate: parseFloat(values.exchangeRate) || 0,
     expenseType: values.expenseType,
-    isReimbursable: values.isReimbursable ?? false,
+    isReimbursable: values.isReimbursable,
     paymentMethod: values.paymentMethod || undefined,
     projectId: values.projectId || undefined,
     vendor: values.vendor || undefined,
@@ -154,18 +159,24 @@ function ExpenseCard({
   req,
   onOpen,
   canModerate,
+  currentUserId,
   moderationBusyId,
   onApprove,
   onRejectClick,
   onReviseClick,
+  onPay,
+  onCloseLifecycle,
 }: {
   req: ExpenseRequest
   onOpen: (r: ExpenseRequest) => void
   canModerate: boolean
+  currentUserId: number | null
   moderationBusyId: string | null
   onApprove: (r: ExpenseRequest) => void
   onRejectClick: (r: ExpenseRequest) => void
   onReviseClick: (r: ExpenseRequest) => void
+  onPay: (r: ExpenseRequest) => void
+  onCloseLifecycle: (r: ExpenseRequest) => void
 }) {
   const typeLabel = TYPE_META[req.expenseType as ExpenseType]?.label ?? req.expenseType
   const reimbLabel = req.isReimbursable
@@ -176,7 +187,11 @@ function ExpenseCard({
   const equivUsd = asExpenseNumber(req.equivalentAmount)
   const rate = asExpenseNumber(req.exchangeRate)
   const payDueLabel = paymentDeadlineCell(req.paymentDeadline)
-  const showMod = canModerate && req.status === 'pending_approval'
+  const blockedOwn = isModerationBlockedForOwnExpense(canModerate, currentUserId, req)
+  const showMod = showPendingApprovalModeration(req, canModerate, blockedOwn)
+  const showOwnModHint = showOwnPendingModerationBlockedHint(req, canModerate, blockedOwn)
+  const showPay = showPayExpenseAction(req, blockedOwn)
+  const closeUi = getCloseExpenseUi(req, blockedOwn)
   const busy = moderationBusyId === req.id
 
   return (
@@ -241,6 +256,11 @@ function ExpenseCard({
       </div>
 
       <div className="exp-card__ft" onClick={e => e.stopPropagation()}>
+        {showOwnModHint && (
+          <p className="exp-card__own-mod-hint" role="status">
+            Свою заявку согласовать нельзя — обратитесь к другому модератору.
+          </p>
+        )}
         {showMod && (
           <div className="exp-card__mod-row">
             <button
@@ -266,6 +286,20 @@ function ExpenseCard({
             <button type="button" className="exp-card__mod-btn exp-card__mod-btn--revise" disabled={busy} onClick={() => onReviseClick(req)}>
               На доработку
             </button>
+          </div>
+        )}
+        {(showPay || closeUi) && (
+          <div className="exp-card__mod-row exp-card__mod-row--lifecycle">
+            {showPay && (
+              <button type="button" className="exp-card__mod-btn exp-card__mod-btn--pay" disabled={busy} onClick={() => onPay(req)}>
+                Оплачено
+              </button>
+            )}
+            {closeUi && (
+              <button type="button" className="exp-card__mod-btn exp-card__mod-btn--close" disabled={busy} onClick={() => onCloseLifecycle(req)}>
+                {closeUi.label}
+              </button>
+            )}
           </div>
         )}
         <button
@@ -442,7 +476,7 @@ function SkeletonCard() {
   )
 }
 
-function SkeletonContent() {
+function SkeletonContent({ cardCount = 6 }: { cardCount?: number }) {
   return (
     <>
       <div className="exp-stats-row exp-stats-row--skel" aria-hidden>
@@ -455,7 +489,7 @@ function SkeletonContent() {
         ))}
       </div>
       <div className="exp-cards exp-cards--grid" aria-busy>
-        {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+        {Array.from({ length: cardCount }).map((_, i) => <SkeletonCard key={i} />)}
       </div>
     </>
   )
@@ -487,35 +521,63 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   const [loadKey, setLoadKey] = useState(0)
   const isModerationQueue = variant === 'moderationQueue'
 
-  useEffect(() => {
-    let cancelled = false
-    setIsLoading(true)
-    setLoadError(null)
-    const params = isModerationQueue
-      ? { status: 'pending_approval' as const, limit: 200 }
-      : { limit: 200 }
-    fetchExpenses(params)
-      .then(data => {
-        if (!cancelled) {
-          setRequests(Array.isArray(data.items) ? data.items : [])
-          setIsLoading(false)
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Ошибка загрузки данных')
-          setIsLoading(false)
-        }
-      })
-    return () => { cancelled = true }
-  }, [loadKey, isModerationQueue])
-
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<ExpenseStatus | ''>('')
   const [filterType, setFilterType] = useState<ExpenseType | ''>('')
   const [filterReimb, setFilterReimb] = useState<'reimbursable' | 'non_reimbursable' | ''>('')
   const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>('all')
   const [openFilter, setOpenFilter] = useState<ActiveFilter>(null)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isMobile) setMobileFiltersOpen(false)
+  }, [isMobile])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 320)
+    return () => window.clearTimeout(t)
+  }, [search])
+
+  const [listTotal, setListTotal] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setIsLoading(true)
+    setLoadError(null)
+    const params = buildExpensesListParams({
+      isModerationQueue,
+      search: debouncedSearch,
+      filterStatus,
+      filterType,
+      filterReimb,
+      filterPeriod,
+    })
+    fetchExpenses(params)
+      .then(data => {
+        if (cancelled) return
+        setRequests(Array.isArray(data.items) ? data.items : [])
+        setListTotal(typeof data.total === 'number' ? data.total : null)
+        setIsLoading(false)
+      })
+      .catch(err => {
+        if (cancelled) return
+        setListTotal(null)
+        setLoadError(err instanceof Error ? err.message : 'Ошибка загрузки данных')
+        setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    loadKey,
+    isModerationQueue,
+    debouncedSearch,
+    filterStatus,
+    filterType,
+    filterReimb,
+    filterPeriod,
+  ])
 
   useEffect(() => {
     if (isModerationQueue) setFilterStatus('')
@@ -532,6 +594,7 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   const [editingReq, setEditingReq] = useState<ExpenseRequest | null>(null)
   const [panelSavePending, setPanelSavePending] = useState(false)
   const [panelSubmitPending, setPanelSubmitPending] = useState(false)
+  const [receiptUploadPending, setReceiptUploadPending] = useState(false)
   const panelFormActionRef = useRef<'idle' | 'save' | 'submit'>('idle')
   /** Ссылка из письма: ?intent=approve|reject после входа в SPA */
   const [emailModerationIntent, setEmailModerationIntent] = useState<'approve' | 'reject' | null>(null)
@@ -542,6 +605,7 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       panelFormActionRef.current = 'idle'
       setPanelSavePending(false)
       setPanelSubmitPending(false)
+      setReceiptUploadPending(false)
     }
   }, [isPanelOpen])
 
@@ -604,6 +668,7 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   const [tableRejectReason, setTableRejectReason] = useState('')
   const [tableReviseComment, setTableReviseComment] = useState('')
   const [tableModErr, setTableModErr] = useState<string | null>(null)
+  const [tableConfirm, setTableConfirm] = useState<TableConfirmState>(null)
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -628,7 +693,7 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   }, [])
 
   const handleOpenReq = useCallback((req: ExpenseRequest) => {
-    const mode = req.status === 'draft' || req.status === 'revision_required' ? 'edit' : 'view'
+    const mode = resolveExpensePanelMode(req.status) === 'edit' ? 'edit' : 'view'
     setEditingReq(req)
     setPanelMode(mode)
     setIsPanelOpen(true)
@@ -714,21 +779,61 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
   )
 
   const handleTableApprove = useCallback(
-    async (req: ExpenseRequest) => {
+    (req: ExpenseRequest) => {
       if (tableModerationBusyId) return
-      setTableModerationBusyId(req.id)
-      setActionError(null)
-      try {
-        const r = await approveExpense(req.id)
-        applyModerationToList(r)
-      } catch (e) {
-        setActionError(e instanceof Error ? e.message : 'Не удалось одобрить заявку')
-      } finally {
-        setTableModerationBusyId(null)
-      }
+      setTableConfirm({ kind: 'approve', req })
     },
-    [tableModerationBusyId, applyModerationToList],
+    [tableModerationBusyId],
   )
+
+  const handleTablePay = useCallback(
+    (req: ExpenseRequest) => {
+      if (tableModerationBusyId) return
+      setTableConfirm({ kind: 'pay', req })
+    },
+    [tableModerationBusyId],
+  )
+
+  const handleTableCloseLifecycle = useCallback(
+    (req: ExpenseRequest) => {
+      if (tableModerationBusyId) return
+      const blockedOwn = isModerationBlockedForOwnExpense(canModerate, user?.id ?? null, req)
+      const ui = getCloseExpenseUi(req, blockedOwn)
+      if (!ui) return
+      setTableConfirm({ kind: 'close', req, message: ui.confirmMessage, confirmLabel: ui.label })
+    },
+    [tableModerationBusyId, canModerate, user?.id],
+  )
+
+  const runTableConfirm = useCallback(async () => {
+    if (!tableConfirm || tableModerationBusyId) return
+    const { req } = tableConfirm
+    setTableModerationBusyId(req.id)
+    setActionError(null)
+    try {
+      let r: ExpenseRequest
+      if (tableConfirm.kind === 'approve') {
+        r = await approveExpense(req.id)
+      } else if (tableConfirm.kind === 'pay') {
+        r = await payExpense(req.id)
+      } else {
+        r = await closeExpense(req.id)
+      }
+      applyModerationToList(r)
+      setTableConfirm(null)
+    } catch (e) {
+      const fallback =
+        tableConfirm.kind === 'approve'
+          ? 'Не удалось одобрить заявку'
+          : tableConfirm.kind === 'pay'
+            ? 'Не удалось отметить оплату'
+            : 'Не удалось выполнить закрытие'
+      setActionError(e instanceof Error ? e.message : fallback)
+      setTableConfirm(null)
+    } finally {
+      setTableModerationBusyId(null)
+    }
+  }, [tableConfirm, tableModerationBusyId, applyModerationToList])
 
   const openTableReject = useCallback((req: ExpenseRequest) => {
     setTableReject(req)
@@ -786,6 +891,16 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
 
   const tableModBusy = tableModerationBusyId !== null
 
+  const tableOverlayOpen = Boolean(tableReject || tableRevise || tableConfirm)
+  useEffect(() => {
+    if (!tableOverlayOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [tableOverlayOpen])
+
   const handleSaveDraft = useCallback(async (values: ExpenseFormValues, filesByKind: ExpenseFilesByKind) => {
     if (panelFormActionRef.current !== 'idle') return
     panelFormActionRef.current = 'save'
@@ -802,9 +917,6 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       let last: ExpenseRequest = saved
       for (const file of filesByKind.payment_document) {
         last = await uploadAttachment(last.id, file, 'payment_document')
-      }
-      for (const file of filesByKind.payment_receipt) {
-        last = await uploadAttachment(last.id, file, 'payment_receipt')
       }
       setRequests(prev =>
         editingReq
@@ -836,9 +948,6 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       let last: ExpenseRequest = saved
       for (const file of filesByKind.payment_document) {
         last = await uploadAttachment(last.id, file, 'payment_document')
-      }
-      for (const file of filesByKind.payment_receipt) {
-        last = await uploadAttachment(last.id, file, 'payment_receipt')
       }
       const submitted = await submitExpense(last.id)
       setRequests(prev =>
@@ -888,35 +997,46 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
     }
   }, [editingReq, authorCache])
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return requestsForUi.filter(r => {
-      const desc = String(r.description ?? '').toLowerCase()
-      const idStr = String(r.id ?? '').toLowerCase()
-      const authorHay = expenseAuthorSearchText(r)
-      if (q && !desc.includes(q) && !idStr.includes(q) && !authorHay.includes(q)) return false
-      if (!isModerationQueue && !EXPENSE_REGISTRY_STATUS_SET.has(r.status)) return false
-      if (!isModerationQueue && filterStatus && r.status !== filterStatus) return false
-      if (filterType && r.expenseType !== filterType) return false
-      if (filterReimb) {
-        const wantReimb = filterReimb === 'reimbursable'
-        if (r.isReimbursable !== wantReimb) return false
+  /** Квитанция об оплате — после «Выплачено»: автор или модератор (не по своей заявке). */
+  const allowPaymentReceiptUpload = useMemo(() => {
+    if (!editingReq || user == null) return false
+    if (editingReq.status !== 'paid') return false
+    if (user.id === editingReq.createdByUserId) return true
+    if (!canModerate) return false
+    return !isModerationBlockedForOwnExpense(canModerate, user.id, editingReq)
+  }, [editingReq, user, canModerate])
+
+  const handleUploadPaymentReceipts = useCallback(
+    async (files: File[]) => {
+      if (!editingReq || files.length === 0) return
+      setReceiptUploadPending(true)
+      setActionError(null)
+      try {
+        let last = editingReq
+        for (const file of files) {
+          last = await uploadAttachment(last.id, file, 'payment_receipt')
+        }
+        setEditingReq(last)
+        setRequests(prev => prev.map(r => (r.id === last.id ? last : r)))
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : 'Не удалось загрузить квитанцию')
+        throw err
+      } finally {
+        setReceiptUploadPending(false)
       }
-      const expD = expenseDateKey(r.expenseDate)
-      if (filterPeriod === 'today' && expD !== TODAY) return false
-      if (filterPeriod === 'week' && (!expD || expD < getWeekStart())) return false
-      if (filterPeriod === 'month' && (!expD || expD < getMonthStart())) return false
-      return true
-    })
-  }, [
-    requestsForUi,
-    search,
-    filterStatus,
-    filterType,
-    filterReimb,
-    filterPeriod,
-    isModerationQueue,
-  ])
+    },
+    [editingReq],
+  )
+
+  /** Фильтры и поиск уходят в API; здесь только защита от неизвестных статусов с бэкенда. */
+  const filtered = useMemo(
+    () =>
+      requestsForUi.filter(r => {
+        const st = r.status as ExpenseStatus
+        return EXPENSE_REGISTRY_STATUS_SET.has(st)
+      }),
+    [requestsForUi],
+  )
 
   const filteredTotals = useMemo(
     () =>
@@ -934,7 +1054,16 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
     ? !!(filterType || filterReimb || filterPeriod !== 'all' || search)
     : !!(filterStatus || filterType || filterReimb || filterPeriod !== 'all' || search)
 
-  /** Фильтр по статусу на /expenses — только статусы реестра (см. EXPENSE_REGISTRY_STATUSES). */
+  const activeFilterChipCount = useMemo(() => {
+    let n = 0
+    if (!isModerationQueue && filterStatus) n++
+    if (filterType) n++
+    if (filterReimb) n++
+    if (filterPeriod !== 'all') n++
+    return n
+  }, [isModerationQueue, filterStatus, filterType, filterReimb, filterPeriod])
+
+  /** Фильтр по статусу на /expenses — полный набор из docs/expenses-frontend-statuses.md. */
   const statuses: ExpenseStatus[] = EXPENSE_REGISTRY_STATUSES
   const types: ExpenseType[] = ['transport', 'food', 'accommodation', 'purchase', 'services', 'entertainment', 'client_expense', 'other']
 
@@ -961,18 +1090,28 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
             <h1 className="expenses-page__title">
               {isModerationQueue ? 'Заявки на согласование' : 'Расходы компании'}
             </h1>
-            <div className="exp-header-actions">
-              {canModerate && !isModerationQueue && (
-                <NavLink to={routes.expensesRequests} className="exp-queue-nav">
-                  На согласование
-                </NavLink>
-              )}
-              {isModerationQueue && (
-                <NavLink to={routes.expenses} className="exp-queue-nav">
-                  Утверждённые расходы
-                </NavLink>
-              )}
-              <button type="button" className="exp-report-btn" onClick={() => setIsReportOpen(true)} title="Создать отчёт Excel">
+            {((canModerate && !isModerationQueue) || isModerationQueue) && (
+              <div className="exp-header-queue-wrap">
+                {canModerate && !isModerationQueue && (
+                  <NavLink to={routes.expensesRequests} className="exp-queue-nav">
+                    На согласование
+                  </NavLink>
+                )}
+                {isModerationQueue && (
+                  <NavLink to={routes.expenses} className="exp-queue-nav">
+                    Утверждённые расходы
+                  </NavLink>
+                )}
+              </div>
+            )}
+            <div className="exp-header-icon-btns">
+              <button
+                type="button"
+                className="exp-report-btn"
+                onClick={() => setIsReportOpen(true)}
+                title="Создать отчёт Excel"
+                aria-label="Создать отчёт Excel"
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
                   <polyline points="14 2 14 8 20 8"/>
@@ -983,7 +1122,7 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
                 <span className="exp-report-btn__label">Отчёт Excel</span>
               </button>
               {!isModerationQueue && (
-                <button type="button" className="exp-create-btn" onClick={handleCreate}>
+                <button type="button" className="exp-create-btn" onClick={handleCreate} aria-label="Создать заявку">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <line x1="12" y1="5" x2="12" y2="19"/>
                     <line x1="5" y1="12" x2="19" y2="12"/>
@@ -1016,7 +1155,35 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
               />
             </div>
 
-            <div className="exp-filters" onMouseDown={e => e.stopPropagation()}>
+            {isMobile && (
+              <button
+                type="button"
+                className={`exp-filters-toggle${activeFilterChipCount > 0 ? ' exp-filters-toggle--active' : ''}`}
+                aria-expanded={mobileFiltersOpen}
+                onClick={() => {
+                  setMobileFiltersOpen(v => {
+                    const next = !v
+                    if (!next) setOpenFilter(null)
+                    return next
+                  })
+                }}
+              >
+                <svg className="exp-filters-toggle__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                </svg>
+                <span>Фильтры</span>
+                {activeFilterChipCount > 0 && (
+                  <span className="exp-filters-toggle__badge" aria-hidden>
+                    {activeFilterChipCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            <div
+              className={`exp-filters${isMobile && !mobileFiltersOpen ? ' exp-filters--mobile-collapsed' : ''}`}
+              onMouseDown={e => e.stopPropagation()}
+            >
               {!isModerationQueue && (
                 <FilterDrop
                   label={filterStatus ? STATUS_META[filterStatus].label : 'Статус'}
@@ -1095,7 +1262,7 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
 
           {/* Stats row + Content */}
           {isLoading ? (
-            <SkeletonContent />
+            <SkeletonContent cardCount={isMobile ? 3 : 6} />
           ) : loadError ? (
             <ServiceUnavailable message={loadError} onRetry={() => setLoadKey(k => k + 1)} />
           ) : (
@@ -1122,6 +1289,12 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
                 </div>
               </div>
 
+              {listTotal != null && listTotal > filtered.length && (
+                <p className="exp-list-total-hint" role="status">
+                  По текущим фильтрам на сервере найдено {listTotal} заявок; загружено не более {filtered.length} (лимит списка 200).
+                </p>
+              )}
+
               {filtered.length === 0 ? (
                 <EmptyState hasFilters={hasFilters} onCreate={handleCreate} moderationQueue={isModerationQueue} />
               ) : (
@@ -1132,10 +1305,13 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
                         req={r}
                         onOpen={handleOpenReq}
                         canModerate={canModerate}
+                        currentUserId={user?.id ?? null}
                         moderationBusyId={tableModerationBusyId}
                         onApprove={handleTableApprove}
                         onRejectClick={openTableReject}
                         onReviseClick={openTableRevise}
+                        onPay={handleTablePay}
+                        onCloseLifecycle={handleTableCloseLifecycle}
                       />
                     </div>
                   ))}
@@ -1146,66 +1322,113 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
         </div>
       </main>
 
-      {tableReject && (
-        <div
-          className="exp-mod-backdrop"
-          role="presentation"
-          onClick={() => {
-            if (!tableModBusy) {
-              setTableReject(null)
-              setTableModErr(null)
-            }
-          }}
-        >
-          <div className="exp-mod-dialog" role="dialog" aria-modal aria-labelledby="exp-table-reject-title" onClick={e => e.stopPropagation()}>
-            <h3 id="exp-table-reject-title" className="exp-mod-dialog__title">Отклонить заявку</h3>
-            <p className="exp-mod-dialog__sub">Заявка {tableReject.id}. Укажите причину — автор её увидит в истории.</p>
-            <textarea
-              className="exp-mod-dialog__textarea"
-              rows={4}
-              placeholder="Причина отклонения"
-              value={tableRejectReason}
-              onChange={e => setTableRejectReason(e.target.value)}
-              disabled={tableModBusy}
-            />
-            {tableModErr && <p className="exp-mod-err" role="alert">{tableModErr}</p>}
-            <div className="exp-mod-dialog__ft">
-              <button type="button" className="exp-panel-btn exp-panel-btn--ghost" disabled={tableModBusy} onClick={() => { setTableReject(null); setTableModErr(null) }}>Отмена</button>
-              <button type="button" className="exp-panel-btn exp-panel-btn--primary exp-panel-btn--danger" disabled={tableModBusy} onClick={confirmTableReject}>Отклонить</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {tableRevise && (
-        <div
-          className="exp-mod-backdrop"
-          role="presentation"
-          onClick={() => {
-            if (!tableModBusy) {
-              setTableRevise(null)
-              setTableModErr(null)
-            }
-          }}
-        >
-          <div className="exp-mod-dialog" role="dialog" aria-modal aria-labelledby="exp-table-revise-title" onClick={e => e.stopPropagation()}>
-            <h3 id="exp-table-revise-title" className="exp-mod-dialog__title">Вернуть на доработку</h3>
-            <p className="exp-mod-dialog__sub">Заявка {tableRevise.id}. Автор сможет исправить заявку и отправить снова.</p>
-            <textarea
-              className="exp-mod-dialog__textarea"
-              rows={4}
-              placeholder="Что нужно исправить или дополнить"
-              value={tableReviseComment}
-              onChange={e => setTableReviseComment(e.target.value)}
-              disabled={tableModBusy}
-            />
-            {tableModErr && <p className="exp-mod-err" role="alert">{tableModErr}</p>}
-            <div className="exp-mod-dialog__ft">
-              <button type="button" className="exp-panel-btn exp-panel-btn--ghost" disabled={tableModBusy} onClick={() => { setTableRevise(null); setTableModErr(null) }}>Отмена</button>
-              <button type="button" className="exp-panel-btn exp-panel-btn--primary" disabled={tableModBusy} onClick={confirmTableRevise}>Вернуть</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {tableOverlayOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            {tableReject && (
+              <div
+                className="exp-mod-backdrop"
+                role="presentation"
+                onClick={() => {
+                  if (!tableModBusy) {
+                    setTableReject(null)
+                    setTableModErr(null)
+                  }
+                }}
+              >
+                <div className="exp-mod-dialog" role="dialog" aria-modal aria-labelledby="exp-table-reject-title" onClick={e => e.stopPropagation()}>
+                  <h3 id="exp-table-reject-title" className="exp-mod-dialog__title">Отклонить заявку</h3>
+                  <p className="exp-mod-dialog__sub">Заявка {tableReject.id}. Укажите причину — автор её увидит в истории.</p>
+                  <textarea
+                    className="exp-mod-dialog__textarea"
+                    rows={4}
+                    placeholder="Причина отклонения"
+                    value={tableRejectReason}
+                    onChange={e => setTableRejectReason(e.target.value)}
+                    disabled={tableModBusy}
+                  />
+                  {tableModErr && <p className="exp-mod-err" role="alert">{tableModErr}</p>}
+                  <div className="exp-mod-dialog__ft">
+                    <button type="button" className="exp-panel-btn exp-panel-btn--ghost" disabled={tableModBusy} onClick={() => { setTableReject(null); setTableModErr(null) }}>Отмена</button>
+                    <button type="button" className="exp-panel-btn exp-panel-btn--primary exp-panel-btn--danger" disabled={tableModBusy} onClick={confirmTableReject}>Отклонить</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {tableRevise && (
+              <div
+                className="exp-mod-backdrop"
+                role="presentation"
+                onClick={() => {
+                  if (!tableModBusy) {
+                    setTableRevise(null)
+                    setTableModErr(null)
+                  }
+                }}
+              >
+                <div className="exp-mod-dialog" role="dialog" aria-modal aria-labelledby="exp-table-revise-title" onClick={e => e.stopPropagation()}>
+                  <h3 id="exp-table-revise-title" className="exp-mod-dialog__title">Вернуть на доработку</h3>
+                  <p className="exp-mod-dialog__sub">Заявка {tableRevise.id}. Автор сможет исправить заявку и отправить снова.</p>
+                  <textarea
+                    className="exp-mod-dialog__textarea"
+                    rows={4}
+                    placeholder="Что нужно исправить или дополнить"
+                    value={tableReviseComment}
+                    onChange={e => setTableReviseComment(e.target.value)}
+                    disabled={tableModBusy}
+                  />
+                  {tableModErr && <p className="exp-mod-err" role="alert">{tableModErr}</p>}
+                  <div className="exp-mod-dialog__ft">
+                    <button type="button" className="exp-panel-btn exp-panel-btn--ghost" disabled={tableModBusy} onClick={() => { setTableRevise(null); setTableModErr(null) }}>Отмена</button>
+                    <button type="button" className="exp-panel-btn exp-panel-btn--primary" disabled={tableModBusy} onClick={confirmTableRevise}>Вернуть</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {tableConfirm && (
+              <ExpenseConfirmDialog
+                isOpen
+                title={
+                  tableConfirm.kind === 'approve'
+                    ? 'Одобрить заявку?'
+                    : tableConfirm.kind === 'pay'
+                      ? 'Отметить оплату?'
+                      : 'Подтверждение'
+                }
+                message={
+                  tableConfirm.kind === 'approve' ? (
+                    <>
+                      <p className="exp-mod-dialog__sub">Статус станет «Одобрено».</p>
+                      {tableConfirm.req.isReimbursable ? (
+                        <p className="exp-mod-dialog__sub">
+                          После одобрения, когда компания оплатит расход, откройте заявку и нажмите «Оплачено».
+                        </p>
+                      ) : null}
+                    </>
+                  ) : tableConfirm.kind === 'pay' ? (
+                    <p className="exp-mod-dialog__sub">Заявка будет переведена в статус «Выплачено».</p>
+                  ) : (
+                    <p className="exp-mod-dialog__sub">{tableConfirm.message}</p>
+                  )
+                }
+                confirmLabel={
+                  tableConfirm.kind === 'approve'
+                    ? 'Одобрить'
+                    : tableConfirm.kind === 'pay'
+                      ? 'Оплачено'
+                      : tableConfirm.confirmLabel
+                }
+                busy={tableModBusy}
+                onClose={() => {
+                  if (!tableModBusy) setTableConfirm(null)
+                }}
+                onConfirm={runTableConfirm}
+              />
+            )}
+          </>,
+          document.body,
+        )}
 
       <ExpensesFormPanel
         isOpen={isPanelOpen}
@@ -1224,6 +1447,10 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
         onExpenseUpdated={handleExpenseUpdated}
         emailModerationIntent={emailModerationIntent}
         onEmailModerationIntentConsumed={() => setEmailModerationIntent(null)}
+        allowPaymentReceiptUpload={allowPaymentReceiptUpload}
+        onUploadPaymentReceipts={handleUploadPaymentReceipts}
+        receiptUploadPending={receiptUploadPending}
+        currentUserId={user?.id ?? null}
       />
 
       <ExpensesReportModal

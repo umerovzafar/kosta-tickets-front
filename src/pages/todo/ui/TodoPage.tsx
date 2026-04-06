@@ -141,8 +141,14 @@ export function TodoPage() {
   const monthLabel = currentMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
 
   const stripHtml = useCallback((html: string): string => {
+    // До innerHTML: убрать вложения Outlook (cid:…) — иначе браузер делает GET cid:… и сыпет ERR_UNKNOWN_URL_SCHEME
+    const safe = html
+      .replace(/<img\b[^>]*>/gi, ' ')
+      .replace(/\s(?:src|href|poster)\s*=\s*"cid:[^"]*"/gi, ' ')
+      .replace(/\s(?:src|href|poster)\s*=\s*'cid:[^']*'/gi, ' ')
+      .replace(/\surl\(\s*(["']?)cid:[^)"']+\1\s*\)/gi, ' url(none)')
     const tmp = document.createElement('div')
-    tmp.innerHTML = html
+    tmp.innerHTML = safe
     return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim()
   }, [])
 
@@ -343,9 +349,10 @@ export function TodoPage() {
   useEffect(() => {
     let cancelled = false
     getCalendarStatus()
-      .then(({ connected }) => {
+      .then(({ connected, detail }) => {
         if (!cancelled) {
           setCalendarConnected(connected)
+          setCalendarConnectError(connected ? null : detail ?? null)
           setCalendarCache([], connected)
         }
       })

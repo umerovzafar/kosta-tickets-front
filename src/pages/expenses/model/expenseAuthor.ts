@@ -83,6 +83,15 @@ export function formatExpenseAuthorLabel(req: ExpenseRequest): string {
   return `Пользователь #${id}`
 }
 
+/** Кто отметил оплату (из paidBy / paidByUserId). */
+export function formatExpensePaidByLabel(req: ExpenseRequest): string {
+  const pb = req.paidBy
+  if (pb?.displayName) return pb.displayName
+  if (pb?.email) return pb.email
+  if (req.paidByUserId != null) return `Пользователь #${req.paidByUserId}`
+  return '—'
+}
+
 /** Колонка Excel: имя и e-mail, если оба есть. */
 export function formatExpenseAuthorExport(req: ExpenseRequest): string {
   const cb = req.createdBy
