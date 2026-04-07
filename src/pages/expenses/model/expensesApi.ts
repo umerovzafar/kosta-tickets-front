@@ -60,7 +60,8 @@ export interface ExpenseCreateBody {
   amountUzs: number
   exchangeRate: number
   expenseType: string
-  expenseSubtype?: string
+  /** Подтип (категория расхода партнёра и др.); `null` сбрасывает при смене типа расхода. */
+  expenseSubtype?: string | null
   isReimbursable: boolean
   paymentMethod?: string
   projectId?: string

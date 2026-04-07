@@ -47,7 +47,7 @@ export class NotificationsWSClient {
 
   private getWsUrl(): string {
     const url = getNotificationsWsUrl()
-    if (!url) throw new Error('VITE_API_BASE_URL не задан')
+    if (!url) throw new Error('WebSocket URL недоступен (нет window / origin)')
     return url
   }
 

@@ -1,6 +1,7 @@
 export { HomePage } from './home'
 export { TicketDetailPage } from './ticket-detail'
 export { AttendancePage } from './attendance'
+export { VacationSchedulePage } from './vacation-schedule'
 export { InventoryPage } from './inventory'
 export { TimeTrackingPage } from './time-tracking'
 export { TodoPage } from './todo'

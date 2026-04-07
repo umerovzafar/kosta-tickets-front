@@ -15,12 +15,14 @@ import type {
   ExpenseStatus,
   ExpenseType,
   ExpenseCreatedBy,
+  PartnerExpenseCategory,
 } from '../model/types'
 import {
   EXPENSE_REGISTRY_STATUSES,
   EXPENSE_REGISTRY_STATUS_SET,
   STATUS_META,
   TYPE_META,
+  PARTNER_EXPENSE_CATEGORY_META,
   REIMBURSABLE_META,
 } from '../model/constants'
 import {
@@ -101,6 +103,10 @@ function fmtUzs(raw: unknown) {
 
 function formValuesToApiBody(values: ExpenseFormValues) {
   const paymentDeadline = values.paymentDeadline.trim() ? values.paymentDeadline : null
+  const expenseSubtype =
+    values.expenseType === 'partner_expense'
+      ? values.expenseSubtype.trim() || null
+      : null
   return {
     description: values.description,
     expenseDate: values.expenseDate,
@@ -113,6 +119,7 @@ function formValuesToApiBody(values: ExpenseFormValues) {
     ),
     exchangeRate: parseFloat(values.exchangeRate) || 0,
     expenseType: values.expenseType,
+    expenseSubtype,
     isReimbursable: values.isReimbursable,
     paymentMethod: values.paymentMethod || undefined,
     projectId: values.projectId || undefined,
@@ -179,6 +186,10 @@ function ExpenseCard({
   onCloseLifecycle: (r: ExpenseRequest) => void
 }) {
   const typeLabel = TYPE_META[req.expenseType as ExpenseType]?.label ?? req.expenseType
+  const partnerSubtypeLabel =
+    req.expenseType === 'partner_expense' && req.expenseSubtype
+      ? PARTNER_EXPENSE_CATEGORY_META[req.expenseSubtype as PartnerExpenseCategory]?.label ?? req.expenseSubtype
+      : null
   const reimbLabel = req.isReimbursable
     ? REIMBURSABLE_META['reimbursable'].label
     : REIMBURSABLE_META['non_reimbursable'].label
@@ -210,6 +221,9 @@ function ExpenseCard({
         <CardFact label="Дата расхода">{fmtExpenseDateCell(req.expenseDate)}</CardFact>
         <CardFact label="Срок оплаты">{payDueLabel}</CardFact>
         <CardFact label="Тип расхода">{typeLabel}</CardFact>
+        {partnerSubtypeLabel && (
+          <CardFact label="Категория партнёра">{partnerSubtypeLabel}</CardFact>
+        )}
         <CardFact label="Возмещение">
           <span className={`exp-reimb exp-reimb--${reimbKey}`}>{reimbLabel}</span>
         </CardFact>
@@ -1065,7 +1079,17 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
 
   /** Фильтр по статусу на /expenses — полный набор из docs/expenses-frontend-statuses.md. */
   const statuses: ExpenseStatus[] = EXPENSE_REGISTRY_STATUSES
-  const types: ExpenseType[] = ['transport', 'food', 'accommodation', 'purchase', 'services', 'entertainment', 'client_expense', 'other']
+  const types: ExpenseType[] = [
+    'transport',
+    'food',
+    'accommodation',
+    'purchase',
+    'services',
+    'entertainment',
+    'client_expense',
+    'partner_expense',
+    'other',
+  ]
 
   return (
     <div className="expenses-page">
@@ -1093,9 +1117,14 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
             {((canModerate && !isModerationQueue) || isModerationQueue) && (
               <div className="exp-header-queue-wrap">
                 {canModerate && !isModerationQueue && (
-                  <NavLink to={routes.expensesRequests} className="exp-queue-nav">
-                    На согласование
-                  </NavLink>
+                  <>
+                    <NavLink to={routes.expensesRequests} className="exp-queue-nav">
+                      На согласование
+                    </NavLink>
+                    <NavLink to={routes.expensesReport} className="exp-queue-nav">
+                      Аналитика
+                    </NavLink>
+                  </>
                 )}
                 {isModerationQueue && (
                   <NavLink to={routes.expenses} className="exp-queue-nav">

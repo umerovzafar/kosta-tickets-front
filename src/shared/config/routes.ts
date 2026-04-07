@@ -4,6 +4,8 @@ export const routes = {
   authCallback: '/auth/callback',
   ticketDetail: '/ticket/:uuid',
   attendance: '/attendance',
+  /** Только роль «Администратор» (см. ProtectedRoute adminOnly). */
+  vacationSchedule: '/vacation-schedule',
   inventory: '/inventory',
   timeTracking: '/time-tracking',
   todo: '/todo',
@@ -26,8 +28,9 @@ export function getUserEditUrl(id: number): string {
   return `/admin/user/${id}`
 }
 
-export function getProjectDetailUrl(id: string): string {
-  return `/time-tracking/project/${id}`
+export function getProjectDetailUrl(projectId: string, clientId?: string): string {
+  const base = `/time-tracking/project/${encodeURIComponent(projectId)}`
+  return clientId ? `${base}?client=${encodeURIComponent(clientId)}` : base
 }
 
 /** Реестр расходов: открыть заявку по id (ссылки из e-mail: `?intent=approve|reject`). */

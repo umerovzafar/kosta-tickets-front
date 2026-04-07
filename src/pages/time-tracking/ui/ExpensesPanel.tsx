@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { MOCK_EXPENSES, EXPENSE_STATUS_META, EXPENSE_CATEGORY_META } from '../model/constants'
 import type { ExpenseStatus, ExpenseRow } from '../model/types'
@@ -76,6 +76,7 @@ const IcoLock = () => (
 )
 
 export function ExpensesPanel() {
+  const scopeFieldId = useId()
   const [loading, setLoading] = useState(true)
   const [teammate, setTeammate] = useState(TEAMMATE_OPTIONS[0])
   const [tmOpen,   setTmOpen]   = useState(false)
@@ -181,32 +182,59 @@ export function ExpensesPanel() {
   if (loading) return <ExpensesSkeleton />
 
   return (
-    <div className="exp">
+    <div className="time-page__panel tt-exp-panel">
+      <div className="tt-settings__header-row tt-exp-panel__title-row">
+        <h1 className="tt-settings__page-title">Расходы</h1>
+      </div>
+      <p className="tt-settings__desc tt-exp-panel__lead">
+        Учёт по неделям и проектам. Сейчас — демонстрационные данные; позже здесь будет связка с заявками на расходы.
+      </p>
 
-      <div className="exp__topbar">
-        <div className="exp__topbar-left">
-          <h1 className="exp__title">Расходы</h1>
-          <button type="button" className="exp__track-btn" onClick={openForm}>
-            <IcoPlus /> Добавить расход
-          </button>
+      <div className="tt-settings__actions-row tt-exp-panel__bar">
+        <div className="tt-exp-panel__scope" ref={tmRef}>
+          <label className="tt-exp-panel__scope-label" htmlFor={scopeFieldId}>
+            Кто в списке
+          </label>
+          <div className="tt-settings__dropdown-wrap tt-exp-panel__dropdown-root">
+            <button
+              id={scopeFieldId}
+              type="button"
+              className="tt-exp-panel__scope-trigger"
+              aria-expanded={tmOpen}
+              aria-haspopup="listbox"
+              onClick={() => setTmOpen(v => !v)}
+            >
+              <span className="tt-exp-panel__scope-trigger-text">{teammate}</span>
+              <IcoChevron />
+            </button>
+            {tmOpen && (
+              <div className="tt-settings__dropdown tt-exp-panel__dropdown-menu" role="listbox">
+                {TEAMMATE_OPTIONS.map(opt => (
+                  <button
+                    key={opt}
+                    type="button"
+                    role="option"
+                    aria-selected={opt === teammate}
+                    className={`tt-settings__dropdown-item${opt === teammate ? ' tt-exp-panel__dropdown-item--on' : ''}`}
+                    onClick={() => {
+                      setTeammate(opt)
+                      setTmOpen(false)
+                    }}
+                  >
+                    <span className="tt-exp-panel__dropdown-check" aria-hidden>
+                      {opt === teammate ? <IcoCheck /> : null}
+                    </span>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div ref={tmRef} className="exp__tm-wrap">
-          <button type="button" className="exp__tm-btn" onClick={() => setTmOpen(v => !v)} aria-expanded={tmOpen}>
-            {teammate} <IcoChevron />
-          </button>
-          {tmOpen && (
-            <div className="exp__tm-menu">
-              {TEAMMATE_OPTIONS.map(opt => (
-                <button key={opt} type="button"
-                  className={`exp__tm-item${opt === teammate ? ' exp__tm-item--on' : ''}`}
-                  onClick={() => { setTeammate(opt); setTmOpen(false) }}>
-                  {opt === teammate && <IcoCheck />}
-                  {opt}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <button type="button" className="tt-exp-panel__add-btn" onClick={openForm}>
+          <IcoPlus />
+          Добавить расход
+        </button>
       </div>
 
       {showForm && createPortal(
@@ -323,33 +351,28 @@ export function ExpensesPanel() {
         document.body
       )}
 
-      {isEmpty && (
-        <div className="exp__empty">
-          <div className="exp__empty-inner">
-            <svg width="220" height="185" viewBox="0 0 220 185" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect x="72" y="18" width="76" height="110" rx="5" fill="#1f2937"/>
-              <rect x="82" y="32" width="44" height="6" rx="3" fill="#4b5563"/>
-              <rect x="82" y="46" width="56" height="5" rx="2.5" fill="#374151"/>
-              <rect x="82" y="57" width="42" height="5" rx="2.5" fill="#374151"/>
-              <rect x="82" y="68" width="50" height="5" rx="2.5" fill="#374151"/>
-              <rect x="82" y="79" width="36" height="5" rx="2.5" fill="#374151"/>
-              <rect x="82" y="90" width="48" height="5" rx="2.5" fill="#374151"/>
-              <rect x="82" y="104" width="32" height="6" rx="3" fill="#6b7280"/>
-              <g transform="rotate(-38 155 100)">
-                <rect x="148" y="62" width="14" height="72" rx="3" fill="#111827"/>
-                <rect x="148" y="62" width="14" height="10" rx="3" fill="#9ca3af"/>
-                <polygon points="148,134 162,134 155,148" fill="#6b7280"/>
-              </g>
-            </svg>
-            <p className="exp__empty-text">
-              Записывайте расходы на авиабилеты, питание, командировки и другие нужды,<br />
-              чтобы точнее планировать бюджет проектов и выставлять счета клиентам.
+      <div className="tt-settings__list tt-exp-panel__body">
+        {isEmpty ? (
+          <div className="tt-exp-panel__list-empty">
+            <div className="tt-exp-panel__empty-icon" aria-hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <line x1="10" y1="9" x2="8" y2="9" />
+              </svg>
+            </div>
+            <p className="tt-exp-panel__empty-title">Пока нет расходов</p>
+            <p className="tt-exp-panel__empty-desc">
+              Авиабилеты, питание, командировки — всё это можно фиксировать здесь, чтобы проще считать бюджет и выставлять
+              счета клиентам.
             </p>
+            <p className="tt-exp-panel__empty-hint">Нажмите «Добавить расход» в строке выше.</p>
           </div>
-        </div>
-      )}
-
-      {!isEmpty && grouped.map(group => {
+        ) : (
+          <div className="tt-exp-panel__weeks">
+            {grouped.map(group => {
         const statusMeta = EXPENSE_STATUS_META[group.status]
         const isCollapsed = collapsed.has(group.weekKey)
         return (
@@ -443,6 +466,9 @@ export function ExpensesPanel() {
           </div>
         )
       })}
+          </div>
+        )}
+      </div>
 
       {detailExp && createPortal(
         <div className="exp__detail-overlay" onClick={() => setDetailExp(null)}>

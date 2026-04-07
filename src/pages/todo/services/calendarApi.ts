@@ -1,25 +1,4 @@
-import { getApiBaseUrl } from '@shared/config'
-import { getAccessToken } from '@shared/lib'
-
-/**
- * URL к эндпоинтам todos (календарь) на gateway.
- * Если задан `VITE_API_BASE_URL` (например https://ticketsback.kostalegal.com) — всегда он,
- * чтобы в dev OAuth шёл на тот же хост, что и `.../todos/calendar/callback` на сервере.
- * Иначе в `vite dev` на :5173 — относительный `/api` через прокси на локальный gateway.
- */
-function todosApiUrl(path: string): string {
-  const normalized = path.replace(/^\//, '')
-  const rel = `/api/v1/todos/${normalized}`
-
-  const base = getApiBaseUrl().replace(/\/+$/, '')
-  if (base) return `${base}${rel}`
-
-  if (import.meta.env.DEV && typeof window !== 'undefined' && window.location.port === '5173') {
-    return rel
-  }
-
-  return rel
-}
+import { apiFetch } from '@shared/api'
 
 /** Единое сообщение: календарь недоступен или не связан с аккаунтом (сброс состояния во UI). */
 export const CALENDAR_NOT_CONNECTED_MSG = 'Календарь не подключён'
@@ -32,16 +11,6 @@ export interface CalendarEvent {
   body?: { content?: string }
 }
 
-function getToken(): string {
-  const token = getAccessToken()
-  if (!token) throw new Error('Требуется авторизация')
-  return token
-}
-
-function authHeaders(): Record<string, string> {
-  return { Authorization: `Bearer ${getToken()}` }
-}
-
 async function parseBody(res: Response): Promise<Record<string, unknown> | null> {
   try {
     return await res.json()
@@ -51,15 +20,9 @@ async function parseBody(res: Response): Promise<Record<string, unknown> | null>
 }
 
 export async function connectOutlookCalendar(): Promise<void> {
-  /* redirect: manual — если сервер случайно отдаст 302 на Microsoft, fetch не пойдёт за ним (иначе CORS). */
-  const res = await fetch(todosApiUrl('calendar/connect'), {
-    method: 'GET',
+  const res = await apiFetch('/api/v1/todos/calendar/connect', {
     redirect: 'manual',
-    headers: {
-      ...authHeaders(),
-      Accept: 'application/json',
-    },
-    credentials: 'include',
+    headers: { Accept: 'application/json' },
   })
 
   if (res.status === 401) throw new Error('Требуется авторизация')
@@ -110,12 +73,8 @@ export async function connectOutlookCalendar(): Promise<void> {
 export type CalendarStatusResult = { connected: boolean; detail?: string }
 
 export async function getCalendarStatus(): Promise<CalendarStatusResult> {
-  const res = await fetch(todosApiUrl('calendar/status'), {
-    headers: {
-      ...authHeaders(),
-      Accept: 'application/json',
-    },
-    credentials: 'include',
+  const res = await apiFetch('/api/v1/todos/calendar/status', {
+    headers: { Accept: 'application/json' },
   })
   if (res.status === 401) throw new Error('Требуется авторизация')
   if (!res.ok) {
@@ -130,20 +89,13 @@ export async function getCalendarStatus(): Promise<CalendarStatusResult> {
   }
 }
 
-export async function getCalendarEvents(
-  start?: string,
-  end?: string,
-): Promise<CalendarEvent[]> {
-  const path = todosApiUrl('calendar/events')
+export async function getCalendarEvents(start?: string, end?: string): Promise<CalendarEvent[]> {
   const qs = new URLSearchParams()
   if (start) qs.set('start', start)
   if (end) qs.set('end', end)
-  const url = qs.toString() ? `${path}?${qs}` : path
+  const path = `/api/v1/todos/calendar/events${qs.toString() ? `?${qs}` : ''}`
 
-  const res = await fetch(url, {
-    headers: authHeaders(),
-    credentials: 'include',
-  })
+  const res = await apiFetch(path)
   if (res.status === 401) throw new Error('Требуется авторизация')
   if (res.status === 503) {
     throw new Error(CALENDAR_NOT_CONNECTED_MSG)
@@ -175,13 +127,9 @@ export async function createCalendarEvent(payload: {
   end: string
   body?: string
 }): Promise<CalendarEvent> {
-  const res = await fetch(todosApiUrl('calendar/events'), {
+  const res = await apiFetch('/api/v1/todos/calendar/events', {
     method: 'POST',
-    headers: {
-      ...authHeaders(),
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
   if (res.status === 401) throw new Error('Требуется авторизация')

@@ -1,18 +1,29 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconCheck, IconCollapseColumn, IconMore, IconPlus, IconStack } from './TodoIcons'
-import type { TodoCard } from '../services/todoUtils'
+import type { User } from '@entities/user'
+import type { TodoCard, TodoColumnListSortMode } from '../services/todoUtils'
+import type { TodoBoardUsers } from '../services/todoUserDisplay'
+import { todoInitialFromDisplayLabel, todoParticipantLabel } from '../services/todoUserDisplay'
 
 type ColumnConfig = {
   id: string
   title: string
   collapsedLabel: string
+  /** Цвет точки колонки с сервера (Kanban API) */
+  dotColor?: string
 }
 
 type TodoColumnProps = {
   config: ColumnConfig
+  todoBoardUsers: TodoBoardUsers
   isCollapsed: boolean
   cards: TodoCard[]
+  /** Прогресс по полному списку колонки (без учёта «скрыть выполненные») */
+  columnProgressDone: number
+  columnProgressTotal: number
+  listSortMode: TodoColumnListSortMode
+  hideCompletedFilter: boolean
   isDragging: boolean
   isDropTarget: boolean
   onColumnMouseDown: (e: React.MouseEvent, id: string) => void
@@ -22,7 +33,8 @@ type TodoColumnProps = {
   onAddCardClick: (id: string) => void
   onCardClick: (columnId: string, cardId: string) => void
   onCardToggleComplete: (columnId: string, cardId: string) => void
-  onSortCards: (columnId: string, mode: 'az' | 'za' | 'newest' | 'oldest' | 'done') => void
+  onSortCards: (columnId: string, mode: TodoColumnListSortMode) => void
+  onToggleHideCompleted: (columnId: string) => void
   onRenameColumn: (columnId: string, title: string) => void
   onClearColumn: (columnId: string) => void
   onDeleteColumn: (columnId: string) => void
@@ -36,8 +48,13 @@ type MenuType = 'stack' | 'more' | null
 
 export const TodoColumn = memo(function TodoColumn({
   config,
+  todoBoardUsers,
   isCollapsed,
   cards,
+  columnProgressDone,
+  columnProgressTotal,
+  listSortMode,
+  hideCompletedFilter,
   isDragging,
   isDropTarget,
   onColumnMouseDown,
@@ -48,6 +65,7 @@ export const TodoColumn = memo(function TodoColumn({
   onCardClick,
   onCardToggleComplete,
   onSortCards,
+  onToggleHideCompleted,
   onRenameColumn,
   onClearColumn,
   onDeleteColumn,
@@ -56,8 +74,9 @@ export const TodoColumn = memo(function TodoColumn({
   draggingCard,
   columnRef,
 }: TodoColumnProps) {
-  const { id } = config
-  const doneCount = cards.filter((c) => c.completed).length
+  const { id, dotColor } = config
+  const sortItemClass = (mode: TodoColumnListSortMode) =>
+    ['todo-col-menu__item', listSortMode === mode && 'todo-col-menu__item--active'].filter(Boolean).join(' ')
   const [openMenu, setOpenMenu] = useState<MenuType>(null)
   const [renaming, setRenaming] = useState(false)
   const [renameVal, setRenameVal] = useState(config.title)
@@ -85,14 +104,15 @@ export const TodoColumn = memo(function TodoColumn({
 
   useEffect(() => {
     if (!openMenu) return
-    const onClick = (e: MouseEvent) => {
+    const onDocClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
           actionsRef.current && !actionsRef.current.contains(e.target as Node)) {
         setOpenMenu(null)
       }
     }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
+    // click (не mousedown): иначе document может обработать раньше пункта меню и сортировка не сработает
+    document.addEventListener('click', onDocClick)
+    return () => document.removeEventListener('click', onDocClick)
   }, [openMenu])
 
   const submitRename = () => {
@@ -115,6 +135,9 @@ export const TodoColumn = memo(function TodoColumn({
         isDropTarget && 'todo-column--drop-target',
         isCardDropTarget && 'todo-column--card-drop-target',
       ].filter(Boolean).join(' ')}
+      style={
+        dotColor ? ({ '--todo-column-dot': dotColor } as React.CSSProperties) : undefined
+      }
     >
       <div
         className="todo-column__head"
@@ -147,34 +170,61 @@ export const TodoColumn = memo(function TodoColumn({
         </div>
 
         {openMenu === 'stack' && createPortal(
-          <div ref={menuRef} className="todo-col-menu" style={menuStyle} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={menuRef}
+            className="todo-col-menu"
+            style={menuStyle}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="todo-col-menu__title">Сортировка</div>
-            <button type="button" className="todo-col-menu__item" onClick={() => { onSortCards(id, 'az'); setOpenMenu(null) }}>
+            <button type="button" className={sortItemClass('server')} onClick={() => { onSortCards(id, 'server'); setOpenMenu(null) }}>
+              <IconStack />
+              Порядок доски
+            </button>
+            <button type="button" className={sortItemClass('az')} onClick={() => { onSortCards(id, 'az'); setOpenMenu(null) }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h13M3 12h9M3 18h5"/><path d="m16 6 4 6h-8l4-6Z"/></svg>
               А → Я
             </button>
-            <button type="button" className="todo-col-menu__item" onClick={() => { onSortCards(id, 'za'); setOpenMenu(null) }}>
+            <button type="button" className={sortItemClass('za')} onClick={() => { onSortCards(id, 'za'); setOpenMenu(null) }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h5M3 12h9M3 18h13"/><path d="m16 18 4-6h-8l4 6Z"/></svg>
               Я → А
             </button>
-            <button type="button" className="todo-col-menu__item" onClick={() => { onSortCards(id, 'newest'); setOpenMenu(null) }}>
+            <button type="button" className={sortItemClass('newest')} onClick={() => { onSortCards(id, 'newest'); setOpenMenu(null) }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               Новые сверху
             </button>
-            <button type="button" className="todo-col-menu__item" onClick={() => { onSortCards(id, 'oldest'); setOpenMenu(null) }}>
+            <button type="button" className={sortItemClass('oldest')} onClick={() => { onSortCards(id, 'oldest'); setOpenMenu(null) }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 8 14"/></svg>
               Старые сверху
             </button>
-            <button type="button" className="todo-col-menu__item" onClick={() => { onSortCards(id, 'done'); setOpenMenu(null) }}>
+            <button type="button" className={sortItemClass('done')} onClick={() => { onSortCards(id, 'done'); setOpenMenu(null) }}>
               <IconCheck />
               Выполненные вниз
+            </button>
+            <div className="todo-col-menu__sep" />
+            <div className="todo-col-menu__title">Фильтр</div>
+            <button
+              type="button"
+              className={['todo-col-menu__item', hideCompletedFilter && 'todo-col-menu__item--active'].filter(Boolean).join(' ')}
+              aria-pressed={hideCompletedFilter}
+              onClick={() => onToggleHideCompleted(id)}
+            >
+              <IconCheck />
+              Скрыть выполненные
             </button>
           </div>,
           document.body,
         )}
 
         {openMenu === 'more' && createPortal(
-          <div ref={menuRef} className="todo-col-menu" style={menuStyle} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={menuRef}
+            className="todo-col-menu"
+            style={menuStyle}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             {!renaming ? (
               <>
                 <button type="button" className="todo-col-menu__item" onClick={() => { setRenaming(true); setRenameVal(config.title) }}>
@@ -215,9 +265,12 @@ export const TodoColumn = memo(function TodoColumn({
         )}
       </div>
 
-      {doneCount > 0 && cards.length > 0 && (
+      {columnProgressDone > 0 && columnProgressTotal > 0 && (
         <div className="todo-column__progress">
-          <div className="todo-column__progress-bar" style={{ width: `${Math.round((doneCount / cards.length) * 100)}%` }} />
+          <div
+            className="todo-column__progress-bar"
+            style={{ width: `${Math.round((columnProgressDone / columnProgressTotal) * 100)}%` }}
+          />
         </div>
       )}
 
@@ -227,6 +280,7 @@ export const TodoColumn = memo(function TodoColumn({
             key={card.id}
             card={card}
             columnId={id}
+            participantUserById={todoBoardUsers.byId}
             onCardClick={onCardClick}
             onCardToggleComplete={onCardToggleComplete}
             onCardDragStart={onCardDragStart}
@@ -262,6 +316,7 @@ export const TodoColumn = memo(function TodoColumn({
 const CardItem = memo(function CardItem({
   card,
   columnId,
+  participantUserById,
   onCardClick,
   onCardToggleComplete,
   onCardDragStart,
@@ -269,6 +324,7 @@ const CardItem = memo(function CardItem({
 }: {
   card: TodoCard
   columnId: string
+  participantUserById: ReadonlyMap<number, User>
   onCardClick: (columnId: string, cardId: string) => void
   onCardToggleComplete: (columnId: string, cardId: string) => void
   onCardDragStart?: (e: React.MouseEvent, columnId: string, cardId: string, cardRect: DOMRect) => void
@@ -278,7 +334,8 @@ const CardItem = memo(function CardItem({
   const hasDesc = !!card.description
   const hasDue = !!card.dueDate
   const hasChecklist = (card.checklist?.length ?? 0) > 0
-  const hasMembers = (card.members?.length ?? 0) > 0
+  const participantIds = card.participantUserIds ?? []
+  const hasMembers = participantIds.length > 0
   const hasMeta = hasDesc || hasDue || hasChecklist
   const checkDone = hasChecklist ? card.checklist!.filter((i) => i.done).length : 0
   const checkTotal = hasChecklist ? card.checklist!.length : 0
@@ -379,11 +436,16 @@ const CardItem = memo(function CardItem({
 
       {hasMembers && (
         <div className="todo-card__members">
-          {card.members!.slice(0, 4).map((m) => (
-            <span key={m} className="todo-card__avatar" title={m}>{m[0].toUpperCase()}</span>
-          ))}
-          {card.members!.length > 4 && (
-            <span className="todo-card__avatar todo-card__avatar--more">+{card.members!.length - 4}</span>
+          {participantIds.slice(0, 4).map((m) => {
+            const label = todoParticipantLabel(participantUserById, m)
+            return (
+              <span key={m} className="todo-card__avatar" title={label}>
+                {todoInitialFromDisplayLabel(label)}
+              </span>
+            )
+          })}
+          {participantIds.length > 4 && (
+            <span className="todo-card__avatar todo-card__avatar--more">+{participantIds.length - 4}</span>
           )}
         </div>
       )}

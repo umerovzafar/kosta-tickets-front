@@ -8,10 +8,17 @@ import {
   type AttachmentItem,
   EXPENSE_ATTACHMENT_MAX_BYTES,
 } from '../model/types'
-import { EXPENSE_CURRENCIES, EXPENSE_TYPES, PAYMENT_METHODS, STATUS_META } from '../model/constants'
+import {
+  EXPENSE_CURRENCIES,
+  EXPENSE_TYPES,
+  PARTNER_EXPENSE_CATEGORIES,
+  PARTNER_EXPENSE_CATEGORY_META,
+  PAYMENT_METHODS,
+  STATUS_META,
+} from '../model/constants'
 import { computeUsdEquivalent, needsForeignUsdRate } from '../model/expenseCurrency'
 import { fetchCbuParsedForDate, foreignUnitsPerUsd, type CbuParsed } from '../model/cbuRates'
-import type { ExpenseAmountCurrency } from '../model/types'
+import type { ExpenseAmountCurrency, PartnerExpenseCategory } from '../model/types'
 import {
   approveExpense,
   rejectExpense,
@@ -37,6 +44,48 @@ import {
 import { asExpenseNumber } from '../model/coerceExpense'
 import { formatExpenseAuthorLabel, formatExpensePaidByLabel } from '../model/expenseAuthor'
 import { ExpenseConfirmDialog } from './ExpenseConfirmDialog'
+import { ExpenseSearchableSelect } from './ExpenseSearchableSelect'
+import {
+  listTimeManagerClients,
+  listClientProjects,
+  isForbiddenError,
+  type TimeManagerClientRow,
+  type TimeManagerClientProjectRow,
+} from '@entities/time-tracking'
+
+type ExpenseClientProjectsGroup = { client: TimeManagerClientRow; projects: TimeManagerClientProjectRow[] }
+type ExpenseProjectPickRow = { client: TimeManagerClientRow; project: TimeManagerClientProjectRow }
+
+const EXPENSE_PROJECT_TYPE_LABEL: Record<string, string> = {
+  time_and_materials: 'T&M',
+  fixed_fee: 'Фикс',
+  non_billable: 'Не оплачиваемый',
+}
+
+function formatExpenseProjectDateShort(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const s = String(iso).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—'
+  const [y, m, d] = s.split('-')
+  return `${d}.${m}.${y}`
+}
+
+function ExpenseProjectCardBody({ project }: { project: TimeManagerClientProjectRow }) {
+  return (
+    <div className="exp-project-picker__card-body">
+      <div className="exp-project-picker__card-title">
+        <span className="exp-project-picker__card-name">{project.name}</span>
+        {project.code ? <span className="exp-project-picker__code">{project.code}</span> : null}
+      </div>
+      <p className="exp-project-picker__meta">
+        {EXPENSE_PROJECT_TYPE_LABEL[project.project_type] ?? project.project_type}
+        {' · '}
+        {formatExpenseProjectDateShort(project.start_date)} — {formatExpenseProjectDateShort(project.end_date)}
+        {project.usage_count > 0 ? ` · записей времени: ${project.usage_count}` : ''}
+      </p>
+    </div>
+  )
+}
 
 export type PanelMode = 'create' | 'edit' | 'view'
 
@@ -113,6 +162,7 @@ const EMPTY: ExpenseFormValues = {
   expenseDate: '',
   paymentDeadline: '',
   expenseType: '',
+  expenseSubtype: '',
   isReimbursable: false,
   amountCurrency: 'UZS',
   foreignPerUsd: '',
@@ -140,6 +190,9 @@ function validate(v: ExpenseFormValues, opts?: ValidateOpts): ExpenseFormErrors 
     e.paymentDeadline = 'Срок оплаты не может быть раньше даты расхода'
   }
   if (!v.expenseType) e.expenseType = 'Выберите тип расхода'
+  if (v.expenseType === 'partner_expense' && !v.expenseSubtype.trim()) {
+    e.expenseSubtype = 'Выберите категорию расхода партнёра'
+  }
   const amt = parseFloat(v.amountUzs)
   if (!v.amountUzs || isNaN(amt) || amt <= 0) e.amountUzs = 'Укажите сумму больше 0'
   const rate = parseFloat(v.exchangeRate)
@@ -151,6 +204,9 @@ function validate(v: ExpenseFormValues, opts?: ValidateOpts): ExpenseFormErrors 
     }
   }
   if (opts?.forSubmit && v.isReimbursable === true) {
+    if (!v.projectId?.trim()) {
+      e.projectId = 'Выберите проект'
+    }
     const s = opts.serverAttachments ?? []
     const pd =
       opts.filesPaymentDoc.length + s.filter(a => a.attachmentKind === 'payment_document').length
@@ -215,6 +271,8 @@ export function ExpensesFormPanel({
   currentUserId = null,
 }: Props) {
   const [values, setValues] = useState<ExpenseFormValues>(EMPTY)
+  const valuesRef = useRef(values)
+  valuesRef.current = values
   const [errors, setErrors] = useState<ExpenseFormErrors>({})
   const [filesPaymentDoc, setFilesPaymentDoc] = useState<File[]>([])
   const [filesReceipt, setFilesReceipt] = useState<File[]>([])
@@ -244,6 +302,11 @@ export function ExpensesFormPanel({
   const fileInputPaymentRef = useRef<HTMLInputElement>(null)
   const fileInputReceiptRef = useRef<HTMLInputElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+
+  const [expenseClientsProjects, setExpenseClientsProjects] = useState<ExpenseClientProjectsGroup[]>([])
+  const [expenseProjectClientId, setExpenseProjectClientId] = useState('')
+  const [expenseProjectsLoading, setExpenseProjectsLoading] = useState(false)
+  const [expenseProjectsError, setExpenseProjectsError] = useState<string | null>(null)
 
   const equivUsd = useMemo(
     () => computeUsdEquivalent(
@@ -309,6 +372,7 @@ export function ExpensesFormPanel({
       expenseDate: editingRequest.expenseDate?.slice(0, 10) ?? '',
       paymentDeadline: editingRequest.paymentDeadline?.slice(0, 10) ?? '',
       expenseType: editingRequest.expenseType,
+      expenseSubtype: editingRequest.expenseSubtype ?? '',
       isReimbursable: editingRequest.isReimbursable,
       amountCurrency: 'UZS',
       foreignPerUsd: '',
@@ -357,6 +421,67 @@ export function ExpensesFormPanel({
   }, [isOpen, mode])
 
   useEffect(() => {
+    if (!isOpen) {
+      setExpenseClientsProjects([])
+      setExpenseProjectClientId('')
+      setExpenseProjectsError(null)
+      setExpenseProjectsLoading(false)
+      return
+    }
+    let cancelled = false
+    setExpenseProjectsLoading(true)
+    setExpenseProjectsError(null)
+    void (async () => {
+      try {
+        const clients = await listTimeManagerClients()
+        clients.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }))
+        const grouped: ExpenseClientProjectsGroup[] = []
+        for (const c of clients) {
+          try {
+            const projs = await listClientProjects(c.id)
+            projs.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }))
+            grouped.push({ client: c, projects: projs })
+          } catch (err) {
+            if (!isForbiddenError(err)) throw err
+            grouped.push({ client: c, projects: [] })
+          }
+        }
+        if (!cancelled) {
+          setExpenseClientsProjects(grouped)
+          const pid = valuesRef.current.projectId.trim()
+          let nextClientId = grouped[0]?.client.id ?? ''
+          if (pid) {
+            const owner = grouped.find(g => g.projects.some(p => p.id === pid))
+            if (owner) nextClientId = owner.client.id
+          }
+          setExpenseProjectClientId(nextClientId)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setExpenseClientsProjects([])
+          setExpenseProjectClientId('')
+          setExpenseProjectsError(e instanceof Error ? e.message : 'Не удалось загрузить проекты')
+        }
+      } finally {
+        if (!cancelled) setExpenseProjectsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen])
+
+  /** После загрузки справочника подставить клиента владельца выбранного проекта (гонка с fill формы из editingRequest). */
+  useEffect(() => {
+    if (!isOpen || expenseClientsProjects.length === 0) return
+    const pid = values.projectId.trim()
+    if (!pid) return
+    const owner = expenseClientsProjects.find(g => g.projects.some(p => p.id === pid))
+    if (!owner) return
+    setExpenseProjectClientId(prev => (prev === owner.client.id ? prev : owner.client.id))
+  }, [isOpen, expenseClientsProjects, values.projectId])
+
+  useEffect(() => {
     if (!isOpen || mode !== 'create' || !cbuParsed) return
     if (!needsForeignUsdRate(values.amountCurrency)) {
       setValues(prev => (prev.foreignPerUsd === '' ? prev : { ...prev, foreignPerUsd: '' }))
@@ -384,9 +509,55 @@ export function ExpensesFormPanel({
   }, [isOpen])
 
   const set = useCallback((field: keyof Omit<ExpenseFormValues, 'isReimbursable'>, val: string) => {
-    setValues(prev => ({ ...prev, [field]: val }))
-    setErrors(prev => ({ ...prev, [field]: undefined }))
+    setValues(prev => {
+      const next: ExpenseFormValues = { ...prev, [field]: val }
+      if (field === 'expenseType' && val !== 'partner_expense') {
+        next.expenseSubtype = ''
+      }
+      return next
+    })
+    setErrors(prev => ({
+      ...prev,
+      [field]: undefined,
+      ...(field === 'expenseType' ? { expenseSubtype: undefined } : {}),
+    }))
   }, [])
+
+  const handleExpenseClientPick = useCallback(
+    (client: TimeManagerClientRow) => {
+      setExpenseProjectClientId(client.id)
+      setValues(prev => {
+        const gid = expenseClientsProjects.find(g => g.client.id === client.id)
+        const keep = gid?.projects.some(p => p.id === prev.projectId) ?? false
+        return {
+          ...prev,
+          vendor: client.name,
+          projectId: keep ? prev.projectId : '',
+        }
+      })
+      setErrors(prev => ({ ...prev, projectId: undefined }))
+    },
+    [expenseClientsProjects],
+  )
+
+  const handleExpenseProjectPick = useCallback((row: ExpenseProjectPickRow) => {
+    setExpenseProjectClientId(row.client.id)
+    setValues(prev => ({ ...prev, projectId: row.project.id, vendor: row.client.name }))
+    setErrors(prev => ({ ...prev, projectId: undefined }))
+  }, [])
+
+  const filterExpenseProjectRows = useCallback(
+    (rows: readonly ExpenseProjectPickRow[], q: string) => {
+      if (q) {
+        return rows.filter(r =>
+          `${r.client.name} ${r.project.name} ${r.project.code ?? ''}`.toLowerCase().includes(q),
+        )
+      }
+      if (!expenseProjectClientId) return [...rows]
+      return rows.filter(r => r.client.id === expenseProjectClientId)
+    },
+    [expenseProjectClientId],
+  )
 
   const setCurrency = useCallback((c: ExpenseAmountCurrency) => {
     setValues(prev => ({
@@ -398,7 +569,11 @@ export function ExpensesFormPanel({
   }, [])
 
   const setReimb = useCallback((val: boolean) => {
-    setValues(prev => ({ ...prev, isReimbursable: val }))
+    setValues(prev => ({
+      ...prev,
+      isReimbursable: val,
+      ...(val === false ? { projectId: '' } : {}),
+    }))
     if (val === false) {
       setFilesPaymentDoc([])
       setFilesReceipt([])
@@ -408,6 +583,7 @@ export function ExpensesFormPanel({
       isReimbursable: undefined,
       ...(val === false
         ? {
+            projectId: undefined,
             comment: undefined,
             attachmentsPaymentDoc: undefined,
             attachmentsReceipt: undefined,
@@ -427,8 +603,22 @@ export function ExpensesFormPanel({
   }, [mode, values])
 
   const handleSaveDraft = useCallback(() => {
-    onSaveDraft(valuesForSave(), filesByKind)
-  }, [valuesForSave, filesByKind, onSaveDraft])
+    const v = valuesForSave()
+    const errs = validate(v, {
+      forSubmit: false,
+      filesPaymentDoc,
+      filesReceipt,
+      serverAttachments: editingRequest?.attachments,
+    })
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      setTimeout(() => {
+        bodyRef.current?.querySelector('[data-err]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 50)
+      return
+    }
+    onSaveDraft(v, filesByKind)
+  }, [valuesForSave, filesByKind, filesPaymentDoc, filesReceipt, editingRequest?.attachments, onSaveDraft])
 
   const handleSubmit = useCallback(() => {
     const v = valuesForSave()
@@ -471,6 +661,29 @@ export function ExpensesFormPanel({
   }, [isOpen, closeAttachPreview])
 
   const isView = mode === 'view'
+
+  const expenseClientsFlat = useMemo(
+    () => expenseClientsProjects.map(g => g.client),
+    [expenseClientsProjects],
+  )
+
+  const expenseProjectRowsFlat = useMemo((): ExpenseProjectPickRow[] => {
+    const out: ExpenseProjectPickRow[] = []
+    for (const g of expenseClientsProjects) {
+      for (const p of g.projects) out.push({ client: g.client, project: p })
+    }
+    return out
+  }, [expenseClientsProjects])
+
+  const selectedExpenseProjectMeta = useMemo(() => {
+    const pid = values.projectId.trim()
+    if (!pid) return null
+    for (const g of expenseClientsProjects) {
+      const p = g.projects.find(x => x.id === pid)
+      if (p) return { client: g.client, project: p }
+    }
+    return null
+  }, [values.projectId, expenseClientsProjects])
 
   const showAdditionalSection = useMemo(() => {
     if (values.isReimbursable === true) return true
@@ -1065,6 +1278,36 @@ export function ExpensesFormPanel({
               {errors.expenseType && <p className="exp-form-err-msg" data-err>{errors.expenseType}</p>}
             </div>
 
+            {values.expenseType === 'partner_expense' && (
+              <div className={`exp-form-field${errors.expenseSubtype ? ' exp-form-field--err' : ''}`}>
+                <label className="exp-form-label">
+                  Категория расхода партнёра <span className="exp-form-req">*</span>
+                </label>
+                {isView ? (
+                  <p className="exp-form-static">
+                    {values.expenseSubtype
+                      ? PARTNER_EXPENSE_CATEGORY_META[values.expenseSubtype as PartnerExpenseCategory]?.label ??
+                        values.expenseSubtype
+                      : '—'}
+                  </p>
+                ) : (
+                  <select
+                    className="exp-form-select"
+                    value={values.expenseSubtype}
+                    onChange={e => set('expenseSubtype', e.target.value)}
+                  >
+                    <option value="">Выберите категорию</option>
+                    {PARTNER_EXPENSE_CATEGORIES.map(c => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {errors.expenseSubtype && <p className="exp-form-err-msg" data-err>{errors.expenseSubtype}</p>}
+              </div>
+            )}
+
             <div className={`exp-form-field${errors.description ? ' exp-form-field--err' : ''}`}>
               <label className="exp-form-label">Описание расхода <span className="exp-form-req">*</span></label>
               <textarea
@@ -1235,28 +1478,154 @@ export function ExpensesFormPanel({
               <p className="exp-form-block__title">Дополнительно</p>
               {values.isReimbursable === true && (
                 <p className="exp-form-hint" style={{ margin: '-0.35rem 0 0 0' }}>
-                  Проект и контрагент — по желанию; для типа «Прочее» нужен комментарий
+                  Проект обязателен (справочник учёта времени). В «Контрагент / Поставщик» подставляется клиент проекта;
+                  для типа «Прочее» нужен комментарий.
                 </p>
               )}
 
-              <div className="exp-form-field">
-                <label className="exp-form-label">Проект</label>
-                <input
-                  type="text" className="exp-form-input" placeholder="Введите название проекта"
-                  value={values.projectId}
-                  onChange={e => set('projectId', e.target.value)}
-                  disabled={isView}
-                />
+              <div className={`exp-form-field exp-form-field--project${errors.projectId ? ' exp-form-field--err' : ''}`}>
+                {expenseProjectsError && (
+                  <p className="exp-form-err-msg" role="alert">
+                    {expenseProjectsError}
+                  </p>
+                )}
+
+                {isView ? (
+                  <>
+                    {selectedExpenseProjectMeta ? (
+                      <div
+                        className="exp-project-picker__card exp-project-picker__card--selected exp-project-picker__card--readonly"
+                        aria-label="Выбранный проект"
+                      >
+                        <ExpenseProjectCardBody project={selectedExpenseProjectMeta.project} />
+                        <p className="exp-project-picker__client-line">{selectedExpenseProjectMeta.client.name}</p>
+                      </div>
+                    ) : values.projectId.trim() ? (
+                      <p className="exp-form-static">Проект не найден в справочнике (ID сохранён в заявке).</p>
+                    ) : (
+                      <p className="exp-form-static exp-form-static--muted">Не указан</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {expenseProjectsLoading && (
+                      <div className="exp-project-picker__loading" role="status">
+                        Загрузка проектов…
+                      </div>
+                    )}
+                    {!expenseProjectsLoading &&
+                      !expenseProjectsError &&
+                      expenseClientsProjects.length === 0 && (
+                        <p className="exp-form-hint">
+                          Нет клиентов: добавьте их в разделе «Учёт времени» → «Настройки».
+                        </p>
+                      )}
+                    {!expenseProjectsLoading &&
+                      !expenseProjectsError &&
+                      expenseClientsProjects.length > 0 && (
+                        <div className="exp-project-picker">
+                          {selectedExpenseProjectMeta &&
+                            selectedExpenseProjectMeta.client.id !== expenseProjectClientId && (
+                              <div className="exp-project-picker__banner" role="status">
+                                <span className="exp-project-picker__banner-text">
+                                  Выбран проект «{selectedExpenseProjectMeta.project.name}» (
+                                  {selectedExpenseProjectMeta.client.name}).
+                                </span>
+                                <button
+                                  type="button"
+                                  className="exp-project-picker__banner-action"
+                                  onClick={() => handleExpenseClientPick(selectedExpenseProjectMeta.client)}
+                                >
+                                  Выбрать этого клиента
+                                </button>
+                              </div>
+                            )}
+
+                          <div className="exp-project-picker__field">
+                            <label className="exp-form-label">Клиент</label>
+                            <ExpenseSearchableSelect<TimeManagerClientRow>
+                              disabled={expenseClientsFlat.length === 0}
+                              placeholder="Выберите клиента"
+                              emptyListText="Нет клиентов"
+                              noMatchText="Клиент не найден"
+                              value={expenseProjectClientId}
+                              items={expenseClientsFlat}
+                              getOptionValue={c => c.id}
+                              getOptionLabel={c => c.name}
+                              getSearchText={c => c.name}
+                              onSelect={handleExpenseClientPick}
+                            />
+                          </div>
+
+                          <p className="exp-form-hint exp-project-picker__combo-hint">
+                            Проект: при пустом поле поиска показаны проекты выбранного клиента; начните ввод — поиск по
+                            всем проектам (название, код, клиент).
+                          </p>
+
+                          <div className="exp-project-picker__field">
+                            <label className="exp-form-label">
+                              Проект
+                              {values.isReimbursable === true && <span className="exp-form-req"> *</span>}
+                            </label>
+                            <ExpenseSearchableSelect<ExpenseProjectPickRow>
+                              disabled={expenseProjectRowsFlat.length === 0}
+                              placeholder="Выберите проект"
+                              emptyListText="Нет проектов"
+                              noMatchText="Проект не найден"
+                              value={values.projectId}
+                              items={expenseProjectRowsFlat}
+                              getOptionValue={r => r.project.id}
+                              getOptionLabel={r => `${r.client.name} — ${r.project.name}`}
+                              getSearchText={r => `${r.client.name} ${r.project.name} ${r.project.code ?? ''}`}
+                              filterItems={filterExpenseProjectRows}
+                              onSelect={handleExpenseProjectPick}
+                              aria-invalid={Boolean(errors.projectId)}
+                              renderOption={row => (
+                                <span className="exp-searchable__opt-rich">
+                                  <ExpenseProjectCardBody project={row.project} />
+                                  <span className="exp-searchable__opt-client">{row.client.name}</span>
+                                </span>
+                              )}
+                            />
+                          </div>
+                        </div>
+                      )}
+                  </>
+                )}
+
+                {!isView &&
+                  !expenseProjectsLoading &&
+                  !expenseProjectsError &&
+                  expenseClientsProjects.length > 0 &&
+                  expenseClientsProjects.every(g => g.projects.length === 0) && (
+                    <p className="exp-form-hint" style={{ margin: '0.35rem 0 0 0' }}>
+                      Нет ни одного проекта: создайте их в «Учёт времени» → «Проекты по клиентам».
+                    </p>
+                  )}
+
+                {errors.projectId && (
+                  <p className="exp-form-err-msg" data-err>
+                    {errors.projectId}
+                  </p>
+                )}
               </div>
 
               <div className="exp-form-field">
                 <label className="exp-form-label">Контрагент / Поставщик</label>
                 <input
-                  type="text" className="exp-form-input" placeholder="Организация или ФИО"
+                  type="text"
+                  className="exp-form-input"
+                  placeholder="Подставляется из клиента проекта"
                   value={values.vendor}
                   onChange={e => set('vendor', e.target.value)}
                   disabled={isView}
                 />
+                {!isView && (
+                  <p className="exp-form-hint" style={{ margin: '0.35rem 0 0 0' }}>
+                    Автоматически заполняется именем клиента при выборе клиента или проекта; при необходимости замените на
+                    поставщика или контрагента по счёту.
+                  </p>
+                )}
               </div>
 
               <div className={`exp-form-field${errors.comment ? ' exp-form-field--err' : ''}`}>

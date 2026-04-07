@@ -8,7 +8,17 @@ import { TimeTrackingRoute } from '@app/TimeTrackingRoute'
 import { ExpensesAccessRoute } from '@app/ExpensesAccessRoute'
 import { ExpensesMgmtRoute } from '@app/ExpensesMgmtRoute'
 import { AdminPage } from '@pages/admin'
-import { AttendancePage, ExpensesPage, ExpensesReportPage, ExpensesRequestsPage, HelpPage, InventoryPage, RulesPage, TodoPage } from '@pages'
+import {
+  AttendancePage,
+  ExpensesPage,
+  ExpensesReportPage,
+  ExpensesRequestsPage,
+  HelpPage,
+  InventoryPage,
+  RulesPage,
+  TodoPage,
+  VacationSchedulePage,
+} from '@pages'
 import { AuthCallbackPage } from '@pages/auth-callback'
 import { HomePage } from '@pages/home'
 import { LoginPage } from '@pages/login'
@@ -40,6 +50,7 @@ const router = createBrowserRouter([
   { path: routes.home, element: withProtected(<HomePage />) },
   { path: routes.ticketDetail, element: withProtected(<TicketDetailPage />) },
   { path: routes.attendance, element: withProtected(<AttendancePage />) },
+  { path: routes.vacationSchedule, element: withProtected(<VacationSchedulePage />, true) },
   { path: routes.inventory, element: withProtected(<InventoryPage />) },
   { path: routes.timeTracking, element: withProtected(<TimeTrackingRoute />) },
   { path: routes.projectDetail, element: withProtected(<ProjectDetailPage />) },

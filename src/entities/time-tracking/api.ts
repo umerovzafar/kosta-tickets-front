@@ -278,6 +278,464 @@ export async function deleteHourlyRate(authUserId: number, rateId: string): Prom
   await throwIfNotOk(res)
 }
 
+/** Ответ `GET/POST/PATCH` клиентов time manager (snake_case). Проценты могут приходить как строки из Decimal. */
+export type TimeManagerClientRow = {
+  id: string
+  name: string
+  address: string | null
+  currency: string
+  invoice_due_mode: string
+  invoice_due_days_after_issue: number | null
+  tax_percent: string | number | null
+  tax2_percent: string | number | null
+  discount_percent: string | number | null
+  created_at: string
+  updated_at: string | null
+}
+
+export type TimeManagerClientCreatePayload = {
+  name: string
+  address?: string | null
+  currency?: string
+  invoiceDueMode?: string
+  invoiceDueDaysAfterIssue?: number | null
+  taxPercent?: number | null
+  tax2Percent?: number | null
+  discountPercent?: number | null
+}
+
+export type TimeManagerClientPatchPayload = {
+  name?: string
+  address?: string | null
+  currency?: string
+  invoiceDueMode?: string
+  invoiceDueDaysAfterIssue?: number | null
+  taxPercent?: number | null
+  tax2Percent?: number | null
+  discountPercent?: number | null
+}
+
+export async function listTimeManagerClients(): Promise<TimeManagerClientRow[]> {
+  const res = await apiFetch('/api/v1/time-tracking/clients')
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientRow[]
+}
+
+export async function getTimeManagerClient(clientId: string): Promise<TimeManagerClientRow> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}`)
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientRow
+}
+
+export async function createTimeManagerClient(body: TimeManagerClientCreatePayload): Promise<TimeManagerClientRow> {
+  const res = await apiFetch('/api/v1/time-tracking/clients', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: body.name,
+      address: body.address ?? null,
+      currency: body.currency ?? 'USD',
+      invoiceDueMode: body.invoiceDueMode ?? 'custom',
+      invoiceDueDaysAfterIssue: body.invoiceDueDaysAfterIssue ?? null,
+      taxPercent: body.taxPercent ?? null,
+      tax2Percent: body.tax2Percent ?? null,
+      discountPercent: body.discountPercent ?? null,
+    }),
+  })
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientRow
+}
+
+export async function patchTimeManagerClient(
+  clientId: string,
+  patch: TimeManagerClientPatchPayload,
+): Promise<TimeManagerClientRow> {
+  const payload: Record<string, unknown> = {}
+  if (patch.name !== undefined) payload.name = patch.name
+  if (patch.address !== undefined) payload.address = patch.address
+  if (patch.currency !== undefined) payload.currency = patch.currency
+  if (patch.invoiceDueMode !== undefined) payload.invoiceDueMode = patch.invoiceDueMode
+  if (patch.invoiceDueDaysAfterIssue !== undefined) payload.invoiceDueDaysAfterIssue = patch.invoiceDueDaysAfterIssue
+  if (patch.taxPercent !== undefined) payload.taxPercent = patch.taxPercent
+  if (patch.tax2Percent !== undefined) payload.tax2Percent = patch.tax2Percent
+  if (patch.discountPercent !== undefined) payload.discountPercent = patch.discountPercent
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientRow
+}
+
+export async function deleteTimeManagerClient(clientId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}`, { method: 'DELETE' })
+  await throwIfNotOk(res)
+}
+
+/** Задача клиента (справочник), ответ API в snake_case. */
+export type TimeManagerClientTaskRow = {
+  id: string
+  client_id: string
+  name: string
+  default_billable_rate: string | number | null
+  billable_by_default: boolean
+  common_for_future_projects: boolean
+  add_to_existing_projects: boolean
+  created_at: string
+  updated_at: string | null
+}
+
+export type TimeManagerClientTaskCreatePayload = {
+  name: string
+  defaultBillableRate?: number | null
+  billableByDefault?: boolean
+  commonForFutureProjects?: boolean
+  addToExistingProjects?: boolean
+}
+
+export type TimeManagerClientTaskPatchPayload = {
+  name?: string
+  defaultBillableRate?: number | null
+  billableByDefault?: boolean
+  commonForFutureProjects?: boolean
+  addToExistingProjects?: boolean
+}
+
+export async function listClientTasks(clientId: string): Promise<TimeManagerClientTaskRow[]> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/tasks`)
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientTaskRow[]
+}
+
+export async function getClientTask(clientId: string, taskId: string): Promise<TimeManagerClientTaskRow> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/tasks/${encodeURIComponent(taskId)}`,
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientTaskRow
+}
+
+export async function createClientTask(
+  clientId: string,
+  body: TimeManagerClientTaskCreatePayload,
+): Promise<TimeManagerClientTaskRow> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: body.name,
+      defaultBillableRate: body.defaultBillableRate ?? null,
+      billableByDefault: body.billableByDefault ?? true,
+      commonForFutureProjects: body.commonForFutureProjects ?? false,
+      addToExistingProjects: body.addToExistingProjects ?? false,
+    }),
+  })
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientTaskRow
+}
+
+export async function patchClientTask(
+  clientId: string,
+  taskId: string,
+  patch: TimeManagerClientTaskPatchPayload,
+): Promise<TimeManagerClientTaskRow> {
+  const payload: Record<string, unknown> = {}
+  if (patch.name !== undefined) payload.name = patch.name
+  if (patch.defaultBillableRate !== undefined) payload.defaultBillableRate = patch.defaultBillableRate
+  if (patch.billableByDefault !== undefined) payload.billableByDefault = patch.billableByDefault
+  if (patch.commonForFutureProjects !== undefined) payload.commonForFutureProjects = patch.commonForFutureProjects
+  if (patch.addToExistingProjects !== undefined) payload.addToExistingProjects = patch.addToExistingProjects
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/tasks/${encodeURIComponent(taskId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientTaskRow
+}
+
+export async function deleteClientTask(clientId: string, taskId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: 'DELETE' },
+  )
+  await throwIfNotOk(res)
+}
+
+/** Категория расходов клиента (справочник time manager). */
+export type TimeManagerClientExpenseCategoryRow = {
+  id: string
+  client_id: string
+  name: string
+  has_unit_price: boolean
+  is_archived: boolean
+  sort_order: number | null
+  created_at: string
+  updated_at: string | null
+  usage_count: number
+  deletable: boolean
+}
+
+export type TimeManagerClientExpenseCategoryCreatePayload = {
+  name: string
+  hasUnitPrice?: boolean
+  sortOrder?: number | null
+}
+
+export type TimeManagerClientExpenseCategoryPatchPayload = {
+  name?: string
+  hasUnitPrice?: boolean
+  isArchived?: boolean
+  sortOrder?: number | null
+}
+
+export async function listClientExpenseCategories(
+  clientId: string,
+  options?: { includeArchived?: boolean },
+): Promise<TimeManagerClientExpenseCategoryRow[]> {
+  const qs = new URLSearchParams()
+  if (options?.includeArchived) qs.set('includeArchived', 'true')
+  const suffix = qs.toString() ? `?${qs}` : ''
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/expense-categories${suffix}`,
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientExpenseCategoryRow[]
+}
+
+export async function getClientExpenseCategory(
+  clientId: string,
+  categoryId: string,
+): Promise<TimeManagerClientExpenseCategoryRow> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/expense-categories/${encodeURIComponent(categoryId)}`,
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientExpenseCategoryRow
+}
+
+export async function createClientExpenseCategory(
+  clientId: string,
+  body: TimeManagerClientExpenseCategoryCreatePayload,
+): Promise<TimeManagerClientExpenseCategoryRow> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/expense-categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: body.name,
+      hasUnitPrice: body.hasUnitPrice ?? false,
+      sortOrder: body.sortOrder ?? null,
+    }),
+  })
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientExpenseCategoryRow
+}
+
+export async function patchClientExpenseCategory(
+  clientId: string,
+  categoryId: string,
+  patch: TimeManagerClientExpenseCategoryPatchPayload,
+): Promise<TimeManagerClientExpenseCategoryRow> {
+  const payload: Record<string, unknown> = {}
+  if (patch.name !== undefined) payload.name = patch.name
+  if (patch.hasUnitPrice !== undefined) payload.hasUnitPrice = patch.hasUnitPrice
+  if (patch.isArchived !== undefined) payload.isArchived = patch.isArchived
+  if (patch.sortOrder !== undefined) payload.sortOrder = patch.sortOrder
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/expense-categories/${encodeURIComponent(categoryId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientExpenseCategoryRow
+}
+
+export async function deleteClientExpenseCategory(clientId: string, categoryId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/expense-categories/${encodeURIComponent(categoryId)}`,
+    { method: 'DELETE' },
+  )
+  await throwIfNotOk(res)
+}
+
+/** Проект клиента (справочник time manager). См. tickets-back `docs/TIME_TRACKING_FRONTEND.md` §5.2, `FRONTEND_TIME_MANAGER_PROJECTS.md`. */
+export type TimeManagerClientProjectRow = {
+  id: string
+  client_id: string
+  name: string
+  code: string | null
+  start_date: string | null
+  end_date: string | null
+  notes: string | null
+  report_visibility: string
+  project_type: string
+  billable_rate_type: string | null
+  budget_type: string | null
+  budget_amount: string | number | null
+  budget_hours: string | number | null
+  budget_resets_every_month: boolean
+  budget_includes_expenses: boolean
+  send_budget_alerts: boolean
+  budget_alert_threshold_percent: string | number | null
+  fixed_fee_amount: string | number | null
+  usage_count: number
+  deletable: boolean
+  created_at: string
+  updated_at: string | null
+}
+
+export type TimeManagerClientProjectCodeHint = {
+  last_code: string | null
+  suggested_next: string | null
+}
+
+export type TimeManagerClientProjectCreatePayload = {
+  name: string
+  code?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  notes?: string | null
+  reportVisibility?: string
+  projectType?: string
+  billableRateType?: string | null
+  budgetType?: string | null
+  budgetAmount?: string | number | null
+  budgetHours?: string | number | null
+  budgetResetsEveryMonth?: boolean
+  budgetIncludesExpenses?: boolean
+  sendBudgetAlerts?: boolean
+  budgetAlertThresholdPercent?: string | number | null
+  fixedFeeAmount?: string | number | null
+}
+
+export type TimeManagerClientProjectPatchPayload = {
+  name?: string
+  code?: string | null
+  startDate?: string | null
+  endDate?: string | null
+  notes?: string | null
+  reportVisibility?: string
+  projectType?: string
+  billableRateType?: string | null
+  budgetType?: string | null
+  budgetAmount?: string | number | null
+  budgetHours?: string | number | null
+  budgetResetsEveryMonth?: boolean
+  budgetIncludesExpenses?: boolean
+  sendBudgetAlerts?: boolean
+  budgetAlertThresholdPercent?: string | number | null
+  fixedFeeAmount?: string | number | null
+}
+
+function projectCreateBody(body: TimeManagerClientProjectCreatePayload): Record<string, unknown> {
+  const o: Record<string, unknown> = { name: body.name }
+  if (body.code !== undefined) o.code = body.code
+  if (body.startDate !== undefined) o.startDate = body.startDate
+  if (body.endDate !== undefined) o.endDate = body.endDate
+  if (body.notes !== undefined) o.notes = body.notes
+  if (body.reportVisibility !== undefined) o.reportVisibility = body.reportVisibility
+  if (body.projectType !== undefined) o.projectType = body.projectType
+  if (body.billableRateType !== undefined) o.billableRateType = body.billableRateType
+  if (body.budgetType !== undefined) o.budgetType = body.budgetType
+  if (body.budgetAmount !== undefined) o.budgetAmount = body.budgetAmount
+  if (body.budgetHours !== undefined) o.budgetHours = body.budgetHours
+  if (body.budgetResetsEveryMonth !== undefined) o.budgetResetsEveryMonth = body.budgetResetsEveryMonth
+  if (body.budgetIncludesExpenses !== undefined) o.budgetIncludesExpenses = body.budgetIncludesExpenses
+  if (body.sendBudgetAlerts !== undefined) o.sendBudgetAlerts = body.sendBudgetAlerts
+  if (body.budgetAlertThresholdPercent !== undefined) o.budgetAlertThresholdPercent = body.budgetAlertThresholdPercent
+  if (body.fixedFeeAmount !== undefined) o.fixedFeeAmount = body.fixedFeeAmount
+  return o
+}
+
+function projectPatchBody(patch: TimeManagerClientProjectPatchPayload): Record<string, unknown> {
+  const o: Record<string, unknown> = {}
+  if (patch.name !== undefined) o.name = patch.name
+  if (patch.code !== undefined) o.code = patch.code
+  if (patch.startDate !== undefined) o.startDate = patch.startDate
+  if (patch.endDate !== undefined) o.endDate = patch.endDate
+  if (patch.notes !== undefined) o.notes = patch.notes
+  if (patch.reportVisibility !== undefined) o.reportVisibility = patch.reportVisibility
+  if (patch.projectType !== undefined) o.projectType = patch.projectType
+  if (patch.billableRateType !== undefined) o.billableRateType = patch.billableRateType
+  if (patch.budgetType !== undefined) o.budgetType = patch.budgetType
+  if (patch.budgetAmount !== undefined) o.budgetAmount = patch.budgetAmount
+  if (patch.budgetHours !== undefined) o.budgetHours = patch.budgetHours
+  if (patch.budgetResetsEveryMonth !== undefined) o.budgetResetsEveryMonth = patch.budgetResetsEveryMonth
+  if (patch.budgetIncludesExpenses !== undefined) o.budgetIncludesExpenses = patch.budgetIncludesExpenses
+  if (patch.sendBudgetAlerts !== undefined) o.sendBudgetAlerts = patch.sendBudgetAlerts
+  if (patch.budgetAlertThresholdPercent !== undefined) o.budgetAlertThresholdPercent = patch.budgetAlertThresholdPercent
+  if (patch.fixedFeeAmount !== undefined) o.fixedFeeAmount = patch.fixedFeeAmount
+  return o
+}
+
+export async function getClientProjectCodeHint(clientId: string): Promise<TimeManagerClientProjectCodeHint> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/projects/code-hint`,
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientProjectCodeHint
+}
+
+export async function listClientProjects(clientId: string): Promise<TimeManagerClientProjectRow[]> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/projects`)
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientProjectRow[]
+}
+
+export async function getClientProject(clientId: string, projectId: string): Promise<TimeManagerClientProjectRow> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/projects/${encodeURIComponent(projectId)}`,
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientProjectRow
+}
+
+export async function createClientProject(
+  clientId: string,
+  body: TimeManagerClientProjectCreatePayload,
+): Promise<TimeManagerClientProjectRow> {
+  const res = await apiFetch(`/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/projects`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(projectCreateBody(body)),
+  })
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientProjectRow
+}
+
+export async function patchClientProject(
+  clientId: string,
+  projectId: string,
+  patch: TimeManagerClientProjectPatchPayload,
+): Promise<TimeManagerClientProjectRow> {
+  const payload = projectPatchBody(patch)
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/projects/${encodeURIComponent(projectId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
+  await throwIfNotOk(res)
+  return (await res.json()) as TimeManagerClientProjectRow
+}
+
+export async function deleteClientProject(clientId: string, projectId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/v1/time-tracking/clients/${encodeURIComponent(clientId)}/projects/${encodeURIComponent(projectId)}`,
+    { method: 'DELETE' },
+  )
+  await throwIfNotOk(res)
+}
+
 export function isForbiddenError(e: unknown): boolean {
   return (
     e instanceof Error &&

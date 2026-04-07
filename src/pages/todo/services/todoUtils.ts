@@ -23,20 +23,45 @@ export type TodoCheckItem = {
   id: string
   text: string
   done: boolean
+  /** Позиция с сервера (для reorder) */
+  position?: number
+}
+
+export type TodoCardAttachment = {
+  id: string
+  name: string
+  mimeType?: string
+  /** Ссылка на /api/v1/media/… (нужен Bearer) */
+  mediaUrl?: string
+  sizeBytes?: number
+}
+
+export type TodoCardComment = {
+  id: string
+  userId: number
+  body: string
+  createdAt: string
 }
 
 export type TodoCard = {
   id: string
   title: string
+  /** ISO с бэкенда (todo card), для сортировки по дате создания */
+  createdAt?: string
   completed?: boolean
   description?: string
   labels?: TodoLabel[]
   dueDate?: string
   dueTime?: string
+  /** ISO с сервера для снимка при архивации */
+  dueAtIso?: string
   startDate?: string
   startTime?: string
   checklist?: TodoCheckItem[]
-  members?: string[]
+  /** Участники: id пользователей (как на бэкенде) */
+  participantUserIds?: number[]
+  attachments?: TodoCardAttachment[]
+  comments?: TodoCardComment[]
   fromCalendar?: boolean
   calendarEventId?: string
   calendarTime?: string
@@ -51,6 +76,13 @@ export const LABEL_COLORS = [
 export type ArchivedCard = TodoCard & {
   archivedAt: string
   fromColumn: string
+  /** Снимок для восстановления */
+  snapshotLabelIds?: number[]
+  snapshotParticipantUserIds?: number[]
+  snapshotDueAt?: string | null
 }
 
 export type ColumnId = string
+
+/** Порядок карточек в колонке только на клиенте (режим «как на сервере» = server). */
+export type TodoColumnListSortMode = 'server' | 'az' | 'za' | 'newest' | 'oldest' | 'done'

@@ -2,8 +2,30 @@ import { useCallback, useMemo, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatedLink } from '@shared/ui'
 import { routes } from '@shared/config'
-import { fetchMediaBlob } from '@shared/api'
-import { buildMonthGrid, type TodoCard, type ArchivedCard, type ColumnId } from '../services/todoUtils'
+import { createAuthenticatedMediaBlobUrl } from '@shared/api'
+import {
+  createTodoCard,
+  createTodoColumn,
+  deleteTodoCard,
+  deleteTodoColumn,
+  fetchTodoBoard,
+  patchTodoBoard,
+  patchTodoCard,
+  patchTodoColumn,
+  reorderTodoColumns,
+  type PatchTodoCardPayload,
+  type TodoBoard,
+  type TodoBoardLabel,
+} from '../api/boardApi'
+import { resolveCalendarColumnId, unpackBoard } from '../services/boardMapper'
+import { cardDueDateTimeToIso } from '../services/todoDueAt'
+import {
+  buildMonthGrid,
+  type TodoCard,
+  type ArchivedCard,
+  type ColumnId,
+  type TodoColumnListSortMode,
+} from '../services/todoUtils'
 import { deriveColumnColors, deriveThemeFromImage, type ThemeVars } from '../services/todoTheme'
 import {
   getCalendarStatus,
@@ -13,7 +35,8 @@ import {
   CALENDAR_NOT_CONNECTED_MSG,
   type CalendarEvent,
 } from '../services/calendarApi'
-import { getMe, uploadDesktopBackground, deleteDesktopBackground } from '@entities/user'
+import { getUsers, uploadDesktopBackground, type User } from '@entities/user'
+import { buildTodoUserByIdMap, type TodoBoardUsers } from '../services/todoUserDisplay'
 import { setCalendarCache } from '../services/calendarCache'
 import {
   IconBack,
@@ -31,6 +54,27 @@ import { TodoAddCardModal } from './TodoAddCardModal'
 import { TodoCardModal } from './TodoCardModal'
 import './TodoPage.css'
 
+function sortKeyTimeForColumnList(c: TodoCard): number {
+  if (c.createdAt) {
+    const t = new Date(c.createdAt).getTime()
+    if (!Number.isNaN(t)) return t
+  }
+  if (c.fromCalendar && c.dueDate?.trim()) {
+    const tm = c.dueTime?.trim() ? `T${c.dueTime}` : 'T12:00'
+    const t = new Date(`${c.dueDate}${tm}`).getTime()
+    if (!Number.isNaN(t)) return t
+  }
+  const cal = /^cal-(.+)$/i.exec(c.id)
+  if (cal) {
+    const tail = cal[1]!
+    let h = 0
+    for (let i = 0; i < tail.length; i += 1) h = (h * 31 + tail.charCodeAt(i)) | 0
+    return h
+  }
+  const n = Number.parseInt(c.id, 10)
+  return Number.isFinite(n) ? n : 0
+}
+
 export function TodoPage() {
   const [plannerCollapsed, setPlannerCollapsed] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(() => new Date())
@@ -39,14 +83,13 @@ export function TodoPage() {
   const [bgTransitioning, setBgTransitioning] = useState(false)
   const [bgUploading, setBgUploading] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const defaultColumnIds = ['today', 'week', 'later'] as const
-  const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => [...defaultColumnIds])
-  const [columnTitles, setColumnTitles] = useState<Record<string, string>>(() => ({
-    today: 'Сегодня',
-    week: 'На этой неделе',
-    later: 'Позже',
-  }))
+  const [columnOrder, setColumnOrder] = useState<ColumnId[]>([])
+  const [columnTitles, setColumnTitles] = useState<Record<string, string>>({})
+  const [columnColors, setColumnColors] = useState<Record<string, string>>({})
+  const [boardError, setBoardError] = useState<string | null>(null)
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({})
+  const [columnListSort, setColumnListSort] = useState<Record<string, TodoColumnListSortMode>>({})
+  const [columnHideCompleted, setColumnHideCompleted] = useState<Record<string, boolean>>({})
   const [draggingColumn, setDraggingColumn] = useState<ColumnId | null>(null)
   const [dropTarget, setDropTarget] = useState<ColumnId | null>(null)
   const [columnDragPreviewPosition, setColumnDragPreviewPosition] = useState<{ x: number; y: number } | null>(null)
@@ -92,6 +135,7 @@ export function TodoPage() {
     week: [],
     later: [],
   })
+  const [boardLabels, setBoardLabels] = useState<TodoBoardLabel[]>([])
   const [selectedCard, setSelectedCard] = useState<{ columnId: string; cardId: string } | null>(null)
   const [archivedCards, setArchivedCards] = useState<ArchivedCard[]>([])
   const [archiveOpen, setArchiveOpen] = useState(false)
@@ -120,6 +164,8 @@ export function TodoPage() {
   const panStartScrollRef = useRef(0)
   const prevRectsRef = useRef<Record<string, DOMRect> | null>(null)
   const dropTargetRef = useRef<ColumnId | null>(null)
+  /** URL фона с борда (`board.background_url`), для которого уже загружен blob — не запрашивать медиа повторно при каждом PATCH доски */
+  const boardBackgroundSourceUrlRef = useRef<string | null>(null)
   const defaultColumns = deriveColumnColors('#1d4ed8')
   const [themeVars, setThemeVars] = useState<ThemeVars>(() => ({
     isDark: false,
@@ -135,6 +181,43 @@ export function TodoPage() {
     navShadow: '0 8px 18px rgba(15,23,42,0.12)',
     ...defaultColumns,
   }))
+
+  const [todoUsersList, setTodoUsersList] = useState<User[]>([])
+  const [todoUsersLoading, setTodoUsersLoading] = useState(true)
+  const [todoUsersError, setTodoUsersError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getUsers(false)
+      .then((list) => {
+        if (!cancelled) {
+          setTodoUsersList(list)
+          setTodoUsersError(null)
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setTodoUsersList([])
+          setTodoUsersError(e instanceof Error ? e.message : 'Не удалось загрузить пользователей')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTodoUsersLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const todoBoardUsers = useMemo(
+    (): TodoBoardUsers => ({
+      byId: buildTodoUserByIdMap(todoUsersList),
+      list: todoUsersList,
+      loading: todoUsersLoading,
+      error: todoUsersError,
+    }),
+    [todoUsersList, todoUsersLoading, todoUsersError],
+  )
 
   const today = useMemo(() => new Date(), [])
   const monthDays = useMemo(() => buildMonthGrid(currentMonth), [currentMonth])
@@ -153,9 +236,17 @@ export function TodoPage() {
   }, [])
 
   const calendarCardsByColumn = useMemo(() => {
-    const result: Record<string, TodoCard[]> = { today: [], week: [], later: [] }
+    const result: Record<string, TodoCard[]> = {}
+    for (const id of columnOrder) {
+      result[id] = []
+    }
     const expired: ArchivedCard[] = []
     if (!calendarEvents.length) return { columns: result, expired }
+
+    const todayCol = resolveCalendarColumnId('today', columnOrder, columnTitles)
+    const weekCol = resolveCalendarColumnId('week', columnOrder, columnTitles)
+    const laterCol = resolveCalendarColumnId('later', columnOrder, columnTitles)
+    const fallbackFrom = todayCol ?? columnOrder[0] ?? ''
 
     const now = new Date()
     const nowMs = now.getTime()
@@ -206,28 +297,28 @@ export function TodoPage() {
           ...card,
           completed: true,
           archivedAt: new Date(endMs).toISOString(),
-          fromColumn: 'today',
+          fromColumn: fallbackFrom,
         })
         continue
       }
 
       if (d >= todayStart && d < todayEnd) {
-        result.today.push(card)
+        if (todayCol) result[todayCol].push(card)
       } else if (d >= weekStart && d < weekEnd) {
-        result.week.push(card)
-      } else {
-        result.later.push(card)
+        if (weekCol) result[weekCol].push(card)
+      } else if (laterCol) {
+        result[laterCol].push(card)
       }
     }
 
-    for (const col of Object.values(result)) {
-      col.sort((a, b) => (a.dueTime ?? '').localeCompare(b.dueTime ?? ''))
+    for (const id of columnOrder) {
+      result[id].sort((a, b) => (a.dueTime ?? '').localeCompare(b.dueTime ?? ''))
     }
 
     expired.sort((a, b) => (b.archivedAt ?? '').localeCompare(a.archivedAt ?? ''))
 
     return { columns: result, expired }
-  }, [calendarEvents, stripHtml])
+  }, [calendarEvents, stripHtml, columnOrder, columnTitles])
 
   const handlePrevMonth = useCallback(() => setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)), [])
   const handleNextMonth = useCallback(() => setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)), [])
@@ -261,6 +352,60 @@ export function TodoPage() {
     img.src = url
   }, [])
 
+  const applyBoardFromApi = useCallback(
+    (board: TodoBoard) => {
+      const {
+        columnOrder: ord,
+        columnTitles: titles,
+        columnColors: colors,
+        collapsedColumns: collapsed,
+        cards: nextCards,
+        boardLabels: labels,
+      } = unpackBoard(board)
+      setColumnOrder(ord)
+      setColumnTitles(titles)
+      setColumnColors(colors)
+      setCards(nextCards)
+      setCollapsedColumns(collapsed)
+      setBoardLabels(labels)
+      const apiBg = board.background_url?.trim() || null
+      if (apiBg) {
+        if (apiBg !== boardBackgroundSourceUrlRef.current) {
+          createAuthenticatedMediaBlobUrl(apiBg)
+            .then((blobUrl) => {
+              boardBackgroundSourceUrlRef.current = apiBg
+              applyBackground(blobUrl)
+            })
+            .catch(() => {})
+        }
+      } else {
+        boardBackgroundSourceUrlRef.current = null
+        setBackgroundImage((prev) => {
+          if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+          return null
+        })
+        setPrevBackground(null)
+        setBgTransitioning(false)
+      }
+    },
+    [applyBackground],
+  )
+
+  const commitBoard = useCallback(
+    async (promise: Promise<TodoBoard>): Promise<TodoBoard | null> => {
+      try {
+        const b = await promise
+        applyBoardFromApi(b)
+        setBoardError(null)
+        return b
+      } catch (e) {
+        setBoardError(e instanceof Error ? e.message : 'Ошибка сохранения доски')
+        return null
+      }
+    },
+    [applyBoardFromApi],
+  )
+
   const handlePickBackground = () => {
     fileInputRef.current?.click()
     setMenuOpen(false)
@@ -276,9 +421,8 @@ export function TodoPage() {
     try {
       const user = await uploadDesktopBackground(file)
       if (user.desktop_background) {
-        const mediaBlobUrl = await fetchMediaBlob(user.desktop_background)
-        URL.revokeObjectURL(blobUrl)
-        applyBackground(mediaBlobUrl)
+        await commitBoard(patchTodoBoard({ background_url: user.desktop_background }))
+        // Фон подтянет applyBoardFromApi из ответа доски (один запрос к /media, без дубля)
       }
     } catch {
       // keep the blob preview on error
@@ -290,7 +434,7 @@ export function TodoPage() {
   const handleDeleteBackground = async () => {
     setMenuOpen(false)
     try {
-      await deleteDesktopBackground()
+      await commitBoard(patchTodoBoard({ background_url: null }))
       setPrevBackground(backgroundImage)
       setBackgroundImage(null)
       setBgTransitioning(false)
@@ -320,21 +464,6 @@ export function TodoPage() {
   }, [backgroundImage])
 
   useEffect(() => {
-    let cancelled = false
-    getMe()
-      .then((user) => {
-        if (!cancelled && user.desktop_background) {
-          return fetchMediaBlob(user.desktop_background).then((blobUrl) => {
-            if (!cancelled) applyBackground(blobUrl)
-            else URL.revokeObjectURL(blobUrl)
-          })
-        }
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [applyBackground])
-
-  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const calendar = params.get('calendar')
     if (calendar === 'connected') {
@@ -348,24 +477,45 @@ export function TodoPage() {
 
   useEffect(() => {
     let cancelled = false
-    getCalendarStatus()
-      .then(({ connected, detail }) => {
-        if (!cancelled) {
-          setCalendarConnected(connected)
-          setCalendarConnectError(connected ? null : detail ?? null)
-          setCalendarCache([], connected)
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) {
-          setInitialLoading(false)
-          setSplashOut(true)
-          setTimeout(() => setSplashDone(true), 500)
-        }
-      })
-    return () => { cancelled = true }
-  }, [])
+    setInitialLoading(true)
+    Promise.all([
+      fetchTodoBoard()
+        .then((board) => {
+          if (!cancelled) {
+            applyBoardFromApi(board)
+            setBoardError(null)
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setBoardError(err instanceof Error ? err.message : 'Не удалось загрузить доску задач')
+          }
+        }),
+      getCalendarStatus()
+        .then(({ connected, detail }) => {
+          if (!cancelled) {
+            setCalendarConnected(connected)
+            setCalendarConnectError(connected ? null : detail ?? null)
+            setCalendarCache([], connected)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCalendarConnected(false)
+            setCalendarConnectError(null)
+          }
+        }),
+    ]).finally(() => {
+      if (!cancelled) {
+        setInitialLoading(false)
+        setSplashOut(true)
+        setTimeout(() => setSplashDone(true), 500)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [applyBoardFromApi])
 
   useEffect(() => {
     if (calendarConnected) setCalendarConnectError(null)
@@ -474,14 +624,15 @@ export function TodoPage() {
     for (const id of columnOrder) {
       calendarByColumn[id] = []
     }
-    for (const dateCol of ['today', 'week', 'later'] as const) {
-      const list = cols[dateCol] || []
+    for (const colId of columnOrder) {
+      const list = cols[colId] || []
       for (const card of list) {
         const eventId = card.calendarEventId
-        const targetCol = eventId && calendarColumnOverrides[eventId] != null
-          ? calendarColumnOverrides[eventId]
-          : dateCol
-        if (columnOrder.includes(targetCol) && calendarByColumn[targetCol]) {
+        const targetCol =
+          eventId && calendarColumnOverrides[eventId] != null
+            ? calendarColumnOverrides[eventId]
+            : colId
+        if (columnOrder.includes(targetCol)) {
           calendarByColumn[targetCol].push(card)
         }
       }
@@ -494,27 +645,60 @@ export function TodoPage() {
     return result
   }, [cards, calendarCardsByColumn, columnOrder, calendarColumnOverrides])
 
+  const displayCardsByColumn = useMemo(() => {
+    const out: Record<string, TodoCard[]> = {}
+    for (const id of columnOrder) {
+      let list = [...(mergedCards[id] ?? [])]
+      if (columnHideCompleted[id]) {
+        list = list.filter((c) => !c.completed)
+      }
+      const mode = columnListSort[id] ?? 'server'
+      if (mode === 'server') {
+        out[id] = list
+        continue
+      }
+      switch (mode) {
+        case 'az':
+          list.sort((a, b) => a.title.localeCompare(b.title, 'ru'))
+          break
+        case 'za':
+          list.sort((a, b) => b.title.localeCompare(a.title, 'ru'))
+          break
+        case 'newest':
+          list.sort((a, b) => sortKeyTimeForColumnList(b) - sortKeyTimeForColumnList(a))
+          break
+        case 'oldest':
+          list.sort((a, b) => sortKeyTimeForColumnList(a) - sortKeyTimeForColumnList(b))
+          break
+        case 'done':
+          list.sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0))
+          break
+        default:
+          break
+      }
+      out[id] = list
+    }
+    return out
+  }, [mergedCards, columnOrder, columnListSort, columnHideCompleted])
+
   const columnConfig = useMemo(
     () =>
       columnOrder.map((id) => ({
         id,
         title: columnTitles[id] ?? id,
-        collapsedLabel: `${columnTitles[id] ?? id} ${(mergedCards[id] || []).length}`,
+        collapsedLabel: `${columnTitles[id] ?? id} ${(displayCardsByColumn[id] || []).length}`,
+        dotColor: columnColors[id],
       })),
-    [columnOrder, columnTitles, mergedCards]
+    [columnOrder, columnTitles, columnColors, displayCardsByColumn],
   )
 
   const handleAddColumn = useCallback(() => {
     const title = addColumnTitle.trim()
     if (!title) return
-    const newId = `col-${Date.now()}`
-    setColumnOrder((prev) => [...prev, newId])
-    setColumnTitles((prev) => ({ ...prev, [newId]: title }))
-    setCollapsedColumns((prev) => ({ ...prev, [newId]: false }))
-    setCards((prev) => ({ ...prev, [newId]: [] }))
+    void commitBoard(createTodoColumn({ title }))
     setAddColumnTitle('')
     setAddColumnOpen(false)
-  }, [addColumnTitle])
+  }, [addColumnTitle, commitBoard])
 
   const handleColumnMouseDown = useCallback((e: React.MouseEvent, id: ColumnId) => {
     if (e.button !== 0) return
@@ -587,15 +771,26 @@ export function TodoPage() {
           if (node) rects[id] = node.getBoundingClientRect()
         })
         prevRectsRef.current = rects
-        setColumnOrder((order) => {
-          const a = order.indexOf(draggingColumn)
-          const b = order.indexOf(target)
-          if (a < 0 || b < 0) return order
+        const order = columnOrder
+        const a = order.indexOf(draggingColumn)
+        const b = order.indexOf(target)
+        if (a >= 0 && b >= 0) {
           const next = [...order]
           next[a] = order[b]
           next[b] = order[a]
-          return next
-        })
+          setColumnOrder(next)
+          void (async () => {
+            const brd = await commitBoard(reorderTodoColumns(next.map(Number)))
+            if (!brd) {
+              try {
+                const fresh = await fetchTodoBoard()
+                applyBoardFromApi(fresh)
+              } catch {
+                /* ignore */
+              }
+            }
+          })()
+        }
       }
       dropTargetRef.current = null
       setDraggingColumn(null)
@@ -608,7 +803,7 @@ export function TodoPage() {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
-  }, [draggingColumn, columnOrder])
+  }, [draggingColumn, columnOrder, commitBoard, applyBoardFromApi])
 
   useEffect(() => {
     if (!prevRectsRef.current) return
@@ -639,23 +834,25 @@ export function TodoPage() {
   const handleAddCard = useCallback(() => {
     const title = addCardTitle.trim()
     if (!title || !addCardColumn) return
-    const newCard: TodoCard = {
-      id: `${addCardColumn}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      title,
-      completed: false,
-    }
-    setCards((prev) => ({ ...prev, [addCardColumn]: [...(prev[addCardColumn] || []), newCard] }))
+    void commitBoard(createTodoCard(Number(addCardColumn), { title }))
     setAddCardTitle('')
     setAddCardColumn(null)
-  }, [addCardTitle, addCardColumn])
+  }, [addCardTitle, addCardColumn, commitBoard])
 
-  const handleToggleCollapse = useCallback((cid: string) => {
-    setCollapsedColumns((s) => ({ ...s, [cid]: !s[cid] }))
-  }, [])
+  const handleToggleCollapse = useCallback(
+    (cid: string) => {
+      const collapsed = !!collapsedColumns[cid]
+      void commitBoard(patchTodoColumn(Number(cid), { isCollapsed: !collapsed }))
+    },
+    [collapsedColumns, commitBoard],
+  )
 
-  const handleExpand = useCallback((cid: string) => {
-    setCollapsedColumns((s) => ({ ...s, [cid]: false }))
-  }, [])
+  const handleExpand = useCallback(
+    (cid: string) => {
+      void commitBoard(patchTodoColumn(Number(cid), { isCollapsed: false }))
+    },
+    [commitBoard],
+  )
 
   const handleAddCardClick = useCallback((cid: ColumnId) => {
     setAddCardColumn(cid)
@@ -666,12 +863,16 @@ export function TodoPage() {
     setSelectedCard({ columnId: cid, cardId })
   }, [])
 
-  const handleCardToggleComplete = useCallback((cid: string, cardId: string) => {
-    setCards((prev) => ({
-      ...prev,
-      [cid]: (prev[cid] || []).map((c) => (c.id === cardId ? { ...c, completed: !c.completed } : c)),
-    }))
-  }, [])
+  const handleCardToggleComplete = useCallback(
+    (cid: string, cardId: string) => {
+      const card = mergedCards[cid]?.find((c) => c.id === cardId)
+      if (!card || card.fromCalendar) return
+      void commitBoard(
+        patchTodoCard(Number(cardId), { isCompleted: !card.completed }),
+      )
+    },
+    [mergedCards, commitBoard],
+  )
 
   const handleColumnKeyDown = useCallback((id: ColumnId) => {
     setDraggingColumn(id)
@@ -689,49 +890,63 @@ export function TodoPage() {
     setPendingCardDragActive(true)
   }, [])
 
-  const handleSortCards = useCallback((colId: string, mode: 'az' | 'za' | 'newest' | 'oldest' | 'done') => {
-    setCards((prev) => {
-      const list = [...(prev[colId] || [])]
-      switch (mode) {
-        case 'az': list.sort((a, b) => a.title.localeCompare(b.title, 'ru')); break
-        case 'za': list.sort((a, b) => b.title.localeCompare(a.title, 'ru')); break
-        case 'newest': list.reverse(); break
-        case 'oldest': break
-        case 'done': list.sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)); break
+  const handleSortCards = useCallback((colId: string, mode: TodoColumnListSortMode) => {
+    setColumnListSort((prev) => ({ ...prev, [colId]: mode }))
+  }, [])
+
+  const handleToggleHideCompleted = useCallback((colId: string) => {
+    setColumnHideCompleted((prev) => ({ ...prev, [colId]: !prev[colId] }))
+  }, [])
+
+  const handleRenameColumn = useCallback(
+    (colId: string, title: string) => {
+      void commitBoard(patchTodoColumn(Number(colId), { title }))
+    },
+    [commitBoard],
+  )
+
+  const handleClearColumn = useCallback(
+    async (colId: string) => {
+      const list = cards[colId] || []
+      let lastBoard: TodoBoard | null = null
+      for (const c of list) {
+        try {
+          lastBoard = await deleteTodoCard(Number(c.id))
+        } catch {
+          break
+        }
       }
-      return { ...prev, [colId]: list }
-    })
-  }, [])
+      if (lastBoard) applyBoardFromApi(lastBoard)
+    },
+    [cards, applyBoardFromApi],
+  )
 
-  const handleRenameColumn = useCallback((colId: string, title: string) => {
-    setColumnTitles((prev) => ({ ...prev, [colId]: title }))
-  }, [])
+  const handleDeleteColumn = useCallback(
+    (colId: string) => {
+      void commitBoard(deleteTodoColumn(Number(colId)))
+    },
+    [commitBoard],
+  )
 
-  const handleClearColumn = useCallback((colId: string) => {
-    setCards((prev) => ({ ...prev, [colId]: [] }))
-  }, [])
-
-  const handleDeleteColumn = useCallback((colId: string) => {
-    setColumnOrder((prev) => prev.filter((c) => c !== colId))
-    setColumnTitles((prev) => { const n = { ...prev }; delete n[colId]; return n })
-    setCards((prev) => { const n = { ...prev }; delete n[colId]; return n })
-    setCollapsedColumns((prev) => { const n = { ...prev }; delete n[colId]; return n })
-  }, [])
-
-  const handleMoveCard = useCallback((fromColumnId: string, cardId: string, toColumnId: string) => {
-    if (fromColumnId === toColumnId) return
-    const card = mergedCards[fromColumnId]?.find((c) => c.id === cardId)
-    if (!card) return
-    if (card.fromCalendar && card.calendarEventId) {
-      setCalendarColumnOverrides((prev) => ({ ...prev, [card.calendarEventId!]: toColumnId }))
-    } else {
-      setCards((prev) => {
-        const fromList = (prev[fromColumnId] || []).filter((c) => c.id !== cardId)
-        const toList = [...(prev[toColumnId] || []), card]
-        return { ...prev, [fromColumnId]: fromList, [toColumnId]: toList }
-      })
-    }
-  }, [mergedCards])
+  const handleMoveCard = useCallback(
+    (fromColumnId: string, cardId: string, toColumnId: string) => {
+      if (fromColumnId === toColumnId) return
+      const card = mergedCards[fromColumnId]?.find((c) => c.id === cardId)
+      if (!card) return
+      if (card.fromCalendar && card.calendarEventId) {
+        setCalendarColumnOverrides((prev) => ({ ...prev, [card.calendarEventId!]: toColumnId }))
+      } else {
+        const manualInTarget = cards[toColumnId]?.length ?? 0
+        void commitBoard(
+          patchTodoCard(Number(cardId), {
+            columnId: Number(toColumnId),
+            position: manualInTarget,
+          }),
+        )
+      }
+    },
+    [mergedCards, cards, commitBoard],
+  )
 
   useEffect(() => {
     if (!pendingCardDragActive && draggingCard === null) return
@@ -795,30 +1010,87 @@ export function TodoPage() {
     }
   }, [pendingCardDragActive, draggingCard, columnOrder, handleMoveCard])
 
-  const handleArchiveCard = useCallback((columnId: string, cardId: string) => {
-    setCards((prev) => {
-      const col = prev[columnId] || []
-      const card = col.find((c) => c.id === cardId)
-      if (card) {
-        const archived: ArchivedCard = {
-          ...card,
-          archivedAt: new Date().toISOString(),
-          fromColumn: columnId,
-        }
-        setArchivedCards((a) => [archived, ...a])
+  const handleArchiveCard = useCallback(
+    async (columnId: string, cardId: string) => {
+      const card = mergedCards[columnId]?.find((c) => c.id === cardId)
+      if (!card) {
+        setSelectedCard(null)
+        return
       }
-      return { ...prev, [columnId]: col.filter((c) => c.id !== cardId) }
-    })
-    setSelectedCard(null)
-  }, [])
+      if (card.fromCalendar) {
+        setSelectedCard(null)
+        return
+      }
+      const snapshotLabelIds = card.labels
+        ?.map((l) => Number(l.id))
+        .filter((n) => !Number.isNaN(n))
+      const snapshotParticipantUserIds =
+        card.participantUserIds && card.participantUserIds.length > 0
+          ? [...card.participantUserIds]
+          : undefined
+      const snapshotDueAt =
+        card.dueAtIso ?? cardDueDateTimeToIso(card.dueDate, card.dueTime) ?? null
+      const board = await commitBoard(patchTodoCard(Number(cardId), { isArchived: true }))
+      if (board) {
+        setArchivedCards((a) => [
+          {
+            ...card,
+            archivedAt: new Date().toISOString(),
+            fromColumn: columnId,
+            snapshotLabelIds: snapshotLabelIds?.length ? snapshotLabelIds : undefined,
+            snapshotParticipantUserIds,
+            snapshotDueAt,
+          },
+          ...a,
+        ])
+      }
+      setSelectedCard(null)
+    },
+    [mergedCards, commitBoard],
+  )
 
-  const handleRestoreCard = useCallback((archivedCard: ArchivedCard) => {
-    const { archivedAt: _, fromColumn, ...card } = archivedCard
-    const targetCol = columnOrder.includes(fromColumn) ? fromColumn : columnOrder[0]
-    if (!targetCol) return
-    setCards((prev) => ({ ...prev, [targetCol]: [...(prev[targetCol] || []), card] }))
-    setArchivedCards((prev) => prev.filter((c) => c.id !== archivedCard.id))
-  }, [columnOrder])
+  const handleRestoreCard = useCallback(
+    (archivedCard: ArchivedCard) => {
+      const targetCol = columnOrder.includes(archivedCard.fromColumn)
+        ? archivedCard.fromColumn
+        : columnOrder[0]
+      if (!targetCol) return
+      void (async () => {
+        let board = await commitBoard(
+          createTodoCard(Number(targetCol), {
+            title: archivedCard.title,
+            body: archivedCard.description ?? undefined,
+            dueAt: archivedCard.snapshotDueAt ?? undefined,
+          }),
+        )
+        if (!board) return
+        const col = board.columns.find((c) => String(c.id) === targetCol)
+        const list = col?.cards ?? []
+        const newCard =
+          list.length > 0 ? list.reduce((best, c) => (c.id > best.id ? c : best), list[0]!) : null
+        if (!newCard) {
+          setArchivedCards((prev) => prev.filter((c) => c.id !== archivedCard.id))
+          return
+        }
+        if (archivedCard.snapshotLabelIds?.length) {
+          const b2 = await commitBoard(
+            patchTodoCard(newCard.id, { labelIds: archivedCard.snapshotLabelIds }),
+          )
+          if (b2) board = b2
+        }
+        if (archivedCard.snapshotParticipantUserIds?.length) {
+          const b3 = await commitBoard(
+            patchTodoCard(newCard.id, {
+              participantUserIds: archivedCard.snapshotParticipantUserIds,
+            }),
+          )
+          if (b3) board = b3
+        }
+        setArchivedCards((prev) => prev.filter((c) => c.id !== archivedCard.id))
+      })()
+    },
+    [columnOrder, commitBoard],
+  )
 
   const handleDeleteArchivedCard = useCallback((cardId: string) => {
     setArchivedCards((prev) => prev.filter((c) => c.id !== cardId))
@@ -833,34 +1105,122 @@ export function TodoPage() {
   }, [])
 
   const selectedCardData = selectedCard ? mergedCards[selectedCard.columnId]?.find((c) => c.id === selectedCard.cardId) : null
+
+  const modalColumnOptions = useMemo(
+    () => columnOrder.map((id) => ({ id, title: columnTitles[id] ?? '' })),
+    [columnOrder, columnTitles],
+  )
+
+  const handleModalMoveToColumn = useCallback(
+    async (targetColumnId: string) => {
+      if (!selectedCard) return
+      if (selectedCard.columnId === targetColumnId) return
+      const card = mergedCards[selectedCard.columnId]?.find((c) => c.id === selectedCard.cardId)
+      if (!card) return
+      if (card.fromCalendar && card.calendarEventId) {
+        setCalendarColumnOverrides((prev) => ({ ...prev, [card.calendarEventId!]: targetColumnId }))
+        setSelectedCard({ columnId: targetColumnId, cardId: selectedCard.cardId })
+        return
+      }
+      const manualInTarget = cards[targetColumnId]?.length ?? 0
+      const board = await commitBoard(
+        patchTodoCard(Number(selectedCard.cardId), {
+          columnId: Number(targetColumnId),
+          position: manualInTarget,
+        }),
+      )
+      if (board) setSelectedCard({ columnId: targetColumnId, cardId: selectedCard.cardId })
+    },
+    [selectedCard, mergedCards, cards, commitBoard],
+  )
+
+  const handleModalCardUpdate = useCallback(
+    (patch: Partial<TodoCard>) => {
+      if (!selectedCard || !selectedCardData) return
+      const c = selectedCardData
+      if (c.fromCalendar) return
+
+      const merged: TodoCard = { ...c, ...patch }
+      const cardId = Number(selectedCard.cardId)
+      const payload: PatchTodoCardPayload = {}
+
+      if (patch.title !== undefined) payload.title = merged.title
+      if (patch.description !== undefined) {
+        payload.body = merged.description?.length ? merged.description : null
+      }
+      if (patch.completed !== undefined) payload.isCompleted = !!merged.completed
+
+      if (patch.dueDate !== undefined || patch.dueTime !== undefined) {
+        payload.dueAt = merged.dueDate?.trim()
+          ? cardDueDateTimeToIso(merged.dueDate, merged.dueTime)
+          : null
+      }
+
+      if (Object.keys(payload).length > 0) {
+        void commitBoard(patchTodoCard(cardId, payload))
+      }
+    },
+    [selectedCard, selectedCardData, commitBoard],
+  )
+
+  const applyTodoBoard = useCallback(
+    (promise: Promise<TodoBoard>) => commitBoard(promise),
+    [commitBoard],
+  )
   const draggingCardData = draggingCard ? mergedCards[draggingCard.columnId]?.find((c) => c.id === draggingCard.cardId) : null
   const draggingColumnConfig = draggingColumn ? columnConfig.find((c) => c.id === draggingColumn) : null
   const draggingColumnCardCount = draggingColumn ? (mergedCards[draggingColumn]?.length ?? 0) : 0
 
+  const todoThemeVarsStyle = useMemo(
+    () =>
+      ({
+        ['--todo-accent' as string]: themeVars.accent,
+        ['--todo-text' as string]: themeVars.text,
+        ['--todo-muted' as string]: themeVars.muted,
+        ['--todo-surface' as string]: themeVars.surface,
+        ['--todo-surface2' as string]: themeVars.surface2,
+        ['--todo-panel-bg' as string]: themeVars.panelBg,
+        ['--todo-border' as string]: themeVars.border,
+        ['--todo-shadow' as string]: themeVars.shadow,
+        ['--todo-header-bg' as string]: themeVars.headerBg,
+        ['--todo-nav-shadow' as string]: themeVars.navShadow,
+        ['--todo-column-today-bg' as string]: themeVars.columnTodayBg,
+        ['--todo-column-today-text' as string]: themeVars.columnTodayText,
+        ['--todo-column-week-bg' as string]: themeVars.columnWeekBg,
+        ['--todo-column-week-text' as string]: themeVars.columnWeekText,
+        ['--todo-column-later-bg' as string]: themeVars.columnLaterBg,
+        ['--todo-column-later-text' as string]: themeVars.columnLaterText,
+        colorScheme: themeVars.isDark ? ('dark' as const) : ('light' as const),
+      }) as React.CSSProperties,
+    [themeVars],
+  )
+
   return (
     <div
       className={`todo-page${initialLoading ? ' todo-page--skeleton' : ''}`}
-      style={
-        {
-          ['--todo-accent' as any]: themeVars.accent,
-          ['--todo-text' as any]: themeVars.text,
-          ['--todo-muted' as any]: themeVars.muted,
-          ['--todo-surface' as any]: themeVars.surface,
-          ['--todo-surface2' as any]: themeVars.surface2,
-          ['--todo-panel-bg' as any]: themeVars.panelBg,
-          ['--todo-border' as any]: themeVars.border,
-          ['--todo-shadow' as any]: themeVars.shadow,
-          ['--todo-header-bg' as any]: themeVars.headerBg,
-          ['--todo-nav-shadow' as any]: themeVars.navShadow,
-          ['--todo-column-today-bg' as any]: themeVars.columnTodayBg,
-          ['--todo-column-today-text' as any]: themeVars.columnTodayText,
-          ['--todo-column-week-bg' as any]: themeVars.columnWeekBg,
-          ['--todo-column-week-text' as any]: themeVars.columnWeekText,
-          ['--todo-column-later-bg' as any]: themeVars.columnLaterBg,
-          ['--todo-column-later-text' as any]: themeVars.columnLaterText,
-        } as React.CSSProperties
-      }
+      style={todoThemeVarsStyle}
     >
+      {boardError && (
+        <div className="todo-page__board-error" role="alert">
+          <span className="todo-page__board-error-text">{boardError}</span>
+          <button
+            type="button"
+            className="todo-page__board-error-retry"
+            onClick={() => {
+              void fetchTodoBoard()
+                .then((b) => {
+                  applyBoardFromApi(b)
+                  setBoardError(null)
+                })
+                .catch((err: unknown) => {
+                  setBoardError(err instanceof Error ? err.message : 'Ошибка загрузки')
+                })
+            }}
+          >
+            Повторить
+          </button>
+        </div>
+      )}
       <header className={`todo-page__header${initialLoading ? ' todo-page__header--skeleton' : ''}`}>
         <div className="todo-page__nav">
           {initialLoading ? (
@@ -952,7 +1312,14 @@ export function TodoPage() {
           className="todo-column-drag-preview"
           style={{ left: columnDragPreviewPosition.x, top: columnDragPreviewPosition.y }}
         >
-          <div className={`todo-column-drag-preview__inner todo-column-drag-preview__inner--${draggingColumn}`}>
+          <div
+            className="todo-column-drag-preview__inner"
+            style={
+              draggingColumn && columnColors[draggingColumn]
+                ? ({ '--todo-column-dot': columnColors[draggingColumn] } as React.CSSProperties)
+                : undefined
+            }
+          >
             <div className="todo-column-drag-preview__head">
               <span className="todo-column-drag-preview__dot" />
               <span className="todo-column-drag-preview__title">{draggingColumnConfig.title}</span>
@@ -1030,12 +1397,20 @@ export function TodoPage() {
                 {columnOrder.map((id) => {
                   const config = columnConfig.find((c) => c.id === id)!
                   const isCollapsed = collapsedColumns[id]
+                  const fullCol = mergedCards[id] || []
+                  const progressDone = fullCol.filter((c) => c.completed).length
+                  const progressTotal = fullCol.length
                   return (
                     <TodoColumn
                       key={id}
                       config={config}
+                      todoBoardUsers={todoBoardUsers}
                       isCollapsed={!!isCollapsed}
-                      cards={mergedCards[id] || []}
+                      cards={displayCardsByColumn[id] || []}
+                      columnProgressDone={progressDone}
+                      columnProgressTotal={progressTotal}
+                      listSortMode={columnListSort[id] ?? 'server'}
+                      hideCompletedFilter={!!columnHideCompleted[id]}
                       isDragging={draggingColumn === id}
                       isDropTarget={dropTarget === id}
                       onColumnMouseDown={handleColumnMouseDown}
@@ -1046,6 +1421,7 @@ export function TodoPage() {
                       onCardClick={handleCardClick}
                       onCardToggleComplete={handleCardToggleComplete}
                       onSortCards={handleSortCards}
+                      onToggleHideCompleted={handleToggleHideCompleted}
                       onRenameColumn={handleRenameColumn}
                       onClearColumn={handleClearColumn}
                       onDeleteColumn={handleDeleteColumn}
@@ -1096,15 +1472,15 @@ export function TodoPage() {
             <TodoCardModal
               card={selectedCardData}
               columnTitle={columnTitles[selectedCard.columnId] ?? ''}
+              columnId={selectedCard.columnId}
+              columns={modalColumnOptions}
+              boardLabels={boardLabels}
+              todoBoardUsers={todoBoardUsers}
+              cardServerId={Number(selectedCard.cardId)}
+              applyTodoBoard={applyTodoBoard}
+              onMoveToColumn={handleModalMoveToColumn}
               onClose={() => setSelectedCard(null)}
-              onCardUpdate={(patch) =>
-                setCards((prev) => ({
-                  ...prev,
-                  [selectedCard.columnId]: (prev[selectedCard.columnId] || []).map((c) =>
-                    c.id === selectedCard.cardId ? { ...c, ...patch } : c
-                  ),
-                }))
-              }
+              onCardUpdate={handleModalCardUpdate}
               onArchive={() => handleArchiveCard(selectedCard.columnId, selectedCard.cardId)}
             />
           )}
@@ -1194,7 +1570,11 @@ export function TodoPage() {
       </div>
 
       {addEventOpen && createPortal(
-        <div className="cal-event-backdrop" onClick={() => setAddEventOpen(false)}>
+        <div
+          className="cal-event-backdrop"
+          style={todoThemeVarsStyle}
+          onClick={() => setAddEventOpen(false)}
+        >
           <form className="cal-event-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmitEvent}>
             <div className="cal-event-modal__head">
               <h3 className="cal-event-modal__title">Новое событие</h3>

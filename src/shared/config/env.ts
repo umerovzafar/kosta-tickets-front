@@ -19,30 +19,46 @@ export function getApiBaseUrl(): string {
   return normalizeBaseUrl(rawBaseUrl)
 }
 
+/** Абсолютный origin для WebSocket при пустом `VITE_API_BASE_URL` (тот же хост, что и SPA). */
+function getBrowserOrigin(): string {
+  if (typeof window === 'undefined') return ''
+  return `${window.location.protocol}//${window.location.host}`
+}
+
+function authPath(suffix: 'azure/login' | 'azure/logout' | 'admin/login'): string {
+  return `/api/v1/auth/${suffix}`
+}
+
 export function getAzureLoginUrl(): string {
   const base = getApiBaseUrl()
-  if (!base) return ''
-  return `${base}/api/v1/auth/azure/login`
+  if (base) return `${base}/api/v1/auth/azure/login`
+  return authPath('azure/login')
 }
 
 export function getAzureLogoutUrl(): string {
   const base = getApiBaseUrl()
-  if (!base) return ''
-  return `${base}/api/v1/auth/azure/logout`
+  if (base) return `${base}/api/v1/auth/azure/logout`
+  return authPath('azure/logout')
 }
 
 export function getAdminLoginUrl(): string {
   const base = getApiBaseUrl()
-  if (!base) return ''
-  return `${base}/api/v1/auth/admin/login`
+  if (base) return `${base}/api/v1/auth/admin/login`
+  return authPath('admin/login')
 }
 
 function getWsUrl(path: string): string {
-  const base = getApiBaseUrl()
-  if (!base) return ''
-  const wsProtocol = base.startsWith('https') ? 'wss' : 'ws'
-  const host = base.replace(/^https?:\/\//, '')
   const p = path.startsWith('/') ? path : `/${path}`
+  const base = getApiBaseUrl()
+  if (base) {
+    const wsProtocol = base.startsWith('https') ? 'wss' : 'ws'
+    const host = base.replace(/^https?:\/\//, '')
+    return `${wsProtocol}://${host}${p}`
+  }
+  const origin = getBrowserOrigin()
+  if (!origin) return ''
+  const wsProtocol = origin.startsWith('https') ? 'wss' : 'ws'
+  const host = origin.replace(/^https?:\/\//, '')
   return `${wsProtocol}://${host}${p}`
 }
 

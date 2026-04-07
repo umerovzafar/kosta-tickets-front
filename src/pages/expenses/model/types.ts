@@ -17,7 +17,18 @@ export type ExpenseType =
   | 'services'
   | 'entertainment'
   | 'client_expense'
+  | 'partner_expense'
   | 'other'
+
+/** Подтип для `expenseType === 'partner_expense'` (уходит в API как `expenseSubtype`). */
+export type PartnerExpenseCategory =
+  | 'partner_office'
+  | 'partner_travel'
+  | 'partner_representation'
+  | 'partner_marketing'
+  | 'partner_professional'
+  | 'partner_equipment'
+  | 'partner_other'
 
 export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'other_payment'
 
@@ -97,6 +108,8 @@ export interface ExpenseFormValues {
   expenseDate: string
   paymentDeadline: string
   expenseType: string
+  /** Категория расхода партнёра; только при `partner_expense`, в API — `expenseSubtype`. */
+  expenseSubtype: string
   /** По умолчанию в форме создания — false (невозмещаемый). */
   isReimbursable: boolean
   /** Валюта поля «Сумма». */
@@ -117,10 +130,12 @@ export interface ExpenseFormErrors {
   expenseDate?: string
   paymentDeadline?: string
   expenseType?: string
+  expenseSubtype?: string
   isReimbursable?: string
   amountUzs?: string
   exchangeRate?: string
   foreignPerUsd?: string
+  projectId?: string
   comment?: string
   attachmentsPaymentDoc?: string
   attachmentsReceipt?: string

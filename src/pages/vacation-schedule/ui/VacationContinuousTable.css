@@ -1,0 +1,450 @@
+.vac-cont {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.vac-cont__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-shrink: 0;
+}
+
+.vac-cont__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  border: 1px solid var(--app-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--vac-legend-bg, #eee);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: default;
+}
+
+.vac-cont__legend-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+}
+
+.vac-cont__legend-dash {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.vac-cont__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--app-border, #e2e8f0);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--app-surface-soft, #f8fafc), color-mix(in srgb, var(--app-accent, #4f46e5) 4%, var(--app-surface-soft, #f8fafc)));
+  flex-shrink: 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+.vac-cont__toolbar-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--app-text, #0f172a);
+}
+
+.vac-cont__toolbar-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vac-cont__swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--app-border, #cbd5e1);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vac-cont__swatch:hover {
+  transform: scale(1.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+.vac-cont__swatch:active {
+  transform: scale(0.96);
+}
+
+.vac-cont__swatch--clear {
+  width: auto;
+  min-width: 28px;
+  padding: 0 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--app-surface, #fff);
+  color: var(--app-text, #334155);
+}
+
+.vac-cont__scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid var(--app-border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--app-surface, #fff);
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--app-text, #0f172a) 28%, transparent) transparent;
+}
+
+.vac-cont__scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.vac-cont__scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--app-text, #0f172a) 28%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.vac-cont__table {
+  width: max-content;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.75rem;
+  color: var(--app-text, #0f172a);
+  user-select: none;
+}
+
+.vac-cont__table th,
+.vac-cont__table td {
+  box-sizing: border-box;
+}
+
+.vac-cont__table {
+  --vac-num-w: 2.5rem;
+  --vac-name-w: 12rem;
+  --vac-day-w: 1.7rem;
+  --vac-month-sum-w: 2.35rem;
+  --vac-year-sum-w: 2.75rem;
+  --vac-h1: 2.5rem;
+  --vac-h2: 1.75rem;
+  --vac-border: #e2e8f0;
+  --vac-border-strong: #cbd5e1;
+  --vac-weekend-bg: #f1f5f9;
+  --vac-weekend-cell: #f8fafc;
+}
+
+.vac-cont__sticky-corner {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 14;
+  width: calc(var(--vac-num-w) + var(--vac-name-w));
+  min-width: calc(var(--vac-num-w) + var(--vac-name-w));
+  height: var(--vac-h1);
+  padding: 0;
+  text-align: center;
+  font-weight: 700;
+  vertical-align: middle;
+  line-height: var(--vac-h1);
+  border: 1px solid var(--vac-border);
+  background: #fff;
+  box-shadow: 3px 0 12px -4px rgba(15, 23, 42, 0.06);
+}
+
+.vac-cont__month-title {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: var(--vac-h1);
+  padding: 0 0.25rem;
+  text-align: center;
+  font-weight: 700;
+  vertical-align: middle;
+  line-height: var(--vac-h1);
+  border: 1px solid var(--vac-border);
+  background: #fafafa;
+  color: var(--app-text, #334155);
+}
+
+.vac-cont__month-title--boundary {
+  border-left: 1px solid var(--vac-border-strong);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.9);
+}
+
+.vac-cont__month-sum-head {
+  width: var(--vac-month-sum-w);
+  min-width: var(--vac-month-sum-w);
+  max-width: var(--vac-month-sum-w);
+  padding: 0.35rem 0.15rem;
+  vertical-align: middle;
+  text-align: center;
+  border: 1px solid var(--vac-border);
+  border-left: 1px solid var(--vac-border-strong);
+  background: #fff;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: var(--app-muted, #64748b);
+}
+
+.vac-cont__year-sum-head {
+  position: sticky;
+  right: 0;
+  top: 0;
+  z-index: 16;
+  width: var(--vac-year-sum-w);
+  min-width: var(--vac-year-sum-w);
+  padding: 0.35rem 0.15rem;
+  vertical-align: middle;
+  text-align: center;
+  border: 1px solid var(--vac-border);
+  border-left: 1px solid var(--vac-border-strong);
+  background: #fff;
+  box-shadow: -3px 0 12px -4px rgba(15, 23, 42, 0.06);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: var(--app-muted, #64748b);
+}
+
+.vac-cont__head-vertical {
+  display: inline-block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+  padding-block: 0.15rem;
+}
+
+.vac-cont__head-vertical--wide {
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+}
+
+.vac-cont__sticky-num {
+  position: sticky;
+  left: 0;
+  top: var(--vac-h1);
+  z-index: 12;
+  width: var(--vac-num-w);
+  min-width: var(--vac-num-w);
+  text-align: center;
+  font-weight: 700;
+  vertical-align: middle;
+  border: 1px solid var(--vac-border);
+  background: #fff;
+  box-shadow: 3px 0 12px -4px rgba(15, 23, 42, 0.06);
+}
+
+.vac-cont__sticky-name {
+  position: sticky;
+  left: var(--vac-num-w);
+  top: var(--vac-h1);
+  z-index: 12;
+  width: var(--vac-name-w);
+  min-width: var(--vac-name-w);
+  text-align: left;
+  font-weight: 700;
+  vertical-align: middle;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--vac-border);
+  background: #fff;
+  box-shadow: 3px 0 12px -4px rgba(15, 23, 42, 0.06);
+}
+
+.vac-cont__th-day {
+  position: sticky;
+  top: var(--vac-h1);
+  z-index: 4;
+  width: var(--vac-day-w);
+  min-width: var(--vac-day-w);
+  max-width: var(--vac-day-w);
+  height: var(--vac-h2);
+  padding: 0;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  line-height: var(--vac-h2);
+  border: 1px solid var(--vac-border);
+  background: #fff;
+  vertical-align: middle;
+}
+
+.vac-cont__th-day--weekend {
+  background: var(--vac-weekend-bg);
+  color: #475569;
+}
+
+.vac-cont__th-day--month-start {
+  border-left: 1px solid var(--vac-border-strong);
+}
+
+.vac-cont__th-wd {
+  position: sticky;
+  top: calc(var(--vac-h1) + var(--vac-h2));
+  z-index: 4;
+  width: var(--vac-day-w);
+  min-width: var(--vac-day-w);
+  max-width: var(--vac-day-w);
+  height: var(--vac-h2);
+  padding: 0;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.625rem;
+  color: var(--app-muted, #64748b);
+  border: 1px solid var(--vac-border);
+  background: #fff;
+  vertical-align: middle;
+  line-height: var(--vac-h2);
+}
+
+.vac-cont__th-wd--weekend {
+  background: var(--vac-weekend-bg);
+  color: #475569;
+}
+
+.vac-cont__th-wd--month-start {
+  border-left: 1px solid var(--vac-border-strong);
+}
+
+.vac-cont__name-cell {
+  font-weight: 600;
+  text-align: left;
+}
+
+.vac-cont tbody .vac-cont__sticky-num,
+.vac-cont tbody .vac-cont__sticky-name {
+  top: auto;
+  background: #fff;
+}
+
+.vac-cont tbody .vac-cont__sticky-num {
+  z-index: 10;
+  height: 1.65rem;
+  line-height: 1.65rem;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.vac-cont tbody .vac-cont__sticky-name {
+  z-index: 10;
+  vertical-align: middle;
+}
+
+.vac-cont tbody tr:hover .vac-cont__cell:not(.vac-cont__cell--selected) {
+  filter: brightness(0.97);
+}
+
+.vac-cont__cell {
+  width: var(--vac-day-w);
+  min-width: var(--vac-day-w);
+  max-width: var(--vac-day-w);
+  height: 1.65rem;
+  line-height: 1.65rem;
+  border: 1px solid var(--vac-border);
+  cursor: cell;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  background: #fff;
+  transition: box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.vac-cont__cell--weekend {
+  background: var(--vac-weekend-cell);
+}
+
+.vac-cont__cell--month-start {
+  border-left: 2px solid #475569;
+}
+
+.vac-cont__cell:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, #4f46e5) 55%, transparent);
+  z-index: 1;
+}
+
+.vac-cont__cell--selected {
+  box-shadow: inset 0 0 0 2px var(--app-accent, #4f46e5);
+  z-index: 2;
+}
+
+.vac-cont__sum-month {
+  width: var(--vac-month-sum-w);
+  min-width: var(--vac-month-sum-w);
+  max-width: var(--vac-month-sum-w);
+  height: 1.65rem;
+  line-height: 1.65rem;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  border: 1px solid var(--vac-border);
+  border-left: 1px solid var(--vac-border-strong);
+  background: #fafafa;
+  color: var(--app-muted, #64748b);
+  vertical-align: middle;
+}
+
+.vac-cont__sum-year {
+  position: sticky;
+  right: 0;
+  z-index: 9;
+  width: var(--vac-year-sum-w);
+  min-width: var(--vac-year-sum-w);
+  height: 1.65rem;
+  line-height: 1.65rem;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  border: 1px solid var(--vac-border);
+  border-left: 1px solid var(--vac-border-strong);
+  background: #fafafa;
+  color: var(--app-text, #475569);
+  box-shadow: -3px 0 12px -4px rgba(15, 23, 42, 0.06);
+  vertical-align: middle;
+}
+
+.vac-cont__empty {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--app-muted, #64748b);
+}
+
+.vac-cont__hint-mini {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--app-muted, #64748b);
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .vac-cont__table {
+    --vac-name-w: 9rem;
+  }
+}

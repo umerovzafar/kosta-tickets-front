@@ -42,11 +42,16 @@ export function normalizeExpenseRequest(r: ExpenseRequest): ExpenseRequest {
   const createdBy = normalizeCreatedBy(x.createdBy ?? x.created_by, createdByUserId)
   const reimbRaw = x.isReimbursable ?? x.is_reimbursable
   const isReimbursable = reimbRaw === true || reimbRaw === 'true'
+  const subRaw = x.expenseSubtype ?? x.expense_subtype
+  const expenseSubtype =
+    subRaw == null || subRaw === '' ? null : String(subRaw)
+
   return {
     ...r,
     createdByUserId: Number.isFinite(createdByUserId) ? createdByUserId : r.createdByUserId,
     createdBy,
     isReimbursable,
+    expenseSubtype,
     amountUzs: asExpenseNumber(pickNumericField(x, 'amountUzs', 'amount_uzs')),
     exchangeRate: asExpenseNumber(pickNumericField(x, 'exchangeRate', 'exchange_rate')),
     equivalentAmount: asExpenseNumber(pickNumericField(x, 'equivalentAmount', 'equivalent_amount')),

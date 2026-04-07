@@ -18,7 +18,7 @@ export async function apiFetch(
   const response = await fetch(url, { ...rest, headers })
   if (response.status === 401) {
     removeAccessToken()
-    window.location.href = getAzureLoginUrl()
+    window.location.href = getAzureLoginUrl() || '/api/v1/auth/azure/login'
     return response
   }
   return response

@@ -3,6 +3,11 @@ import type { ExpenseRequest, ExpenseType, ExpenseStatus, PaymentMethod } from '
 import { STATUS_META, TYPE_META, REIMBURSABLE_META, PAYMENT_META } from '../model/constants'
 import { asExpenseNumber } from '../model/coerceExpense'
 import { formatExpenseAuthorExport } from '../model/expenseAuthor'
+import {
+  getColumnDef,
+  type ExpenseReportColumnId,
+  type ExpenseReportColumnDef,
+} from '../model/expensesReportColumns'
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -39,7 +44,7 @@ function todayStr(): string {
   return fmtDate(new Date().toISOString().slice(0, 10))
 }
 
-function applyFilters(requests: ExpenseRequest[], cfg: ReportConfig): ExpenseRequest[] {
+export function applyFilters(requests: ExpenseRequest[], cfg: ReportConfig): ExpenseRequest[] {
   return requests.filter(r => {
     if (cfg.dateFrom && r.expenseDate < cfg.dateFrom) return false
     if (cfg.dateTo   && r.expenseDate > cfg.dateTo)   return false
@@ -456,6 +461,111 @@ export async function exportExpensesToExcel(
   a.href = url
   const dateStr = new Date().toISOString().slice(0, 10)
   a.download = `expense-report-${dateStr}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/** 1-based column index → Excel letter(s). */
+function excelColumnLetter(col1: number): string {
+  let n = col1
+  let s = ''
+  while (n > 0) {
+    const r = (n - 1) % 26
+    s = String.fromCharCode(65 + r) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
+
+/**
+ * Вторая выгрузка: лист с выбранными столбцами (как «мини-таблица» в интерфейсе).
+ */
+export async function exportExpensesCustomTableToExcel(
+  rows: ExpenseRequest[],
+  columnIds: ExpenseReportColumnId[],
+  meta: { title: string; subtitle: string },
+): Promise<void> {
+  const cols = columnIds
+    .map(id => getColumnDef(id))
+    .filter((c): c is ExpenseReportColumnDef => c != null)
+  if (cols.length === 0) return
+
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Kosta Legal'
+  wb.created = new Date()
+  wb.modified = new Date()
+
+  const ws = wb.addWorksheet('Таблица (Table)', {
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    views: [{ showGridLines: true, state: 'frozen', ySplit: 4 }],
+    properties: { tabColor: C_ACCENT },
+  })
+
+  const lastCol = excelColumnLetter(cols.length)
+  cols.forEach((c, i) => {
+    ws.getColumn(i + 1).width = Math.min(48, Math.max(12, (c.minWidth ?? 140) / 6.5))
+  })
+
+  ws.mergeCells(`A1:${lastCol}1`)
+  ws.getRow(1).height = 30
+  const t1 = ws.getCell('A1')
+  t1.value = meta.title.toUpperCase()
+  t1.font = font({ bold: true, size: 12, color: C_WHITE })
+  t1.fill = solid(C_NAVY)
+  t1.alignment = { horizontal: 'center', vertical: 'middle' }
+
+  ws.mergeCells(`A2:${lastCol}2`)
+  ws.getRow(2).height = 20
+  const t2 = ws.getCell('A2')
+  t2.value = meta.subtitle
+  t2.font = font({ size: 9, italic: true, color: C_MUTED })
+  t2.fill = solid({ argb: 'FFF1F5F9' })
+  t2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+
+  ws.getRow(3).height = 6
+  ws.mergeCells(`A3:${lastCol}3`)
+  ws.getCell('A3').fill = solid({ argb: 'FFF1F5F9' })
+
+  const HDR = 4
+  ws.getRow(HDR).height = 22
+  cols.forEach((c, i) => {
+    const cell = ws.getRow(HDR).getCell(i + 1)
+    cell.value = c.label
+    cell.font = font({ bold: true, size: 9, color: C_WHITE })
+    cell.fill = solid(C_HEADER)
+    cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+    cell.border = border()
+  })
+
+  ws.autoFilter = `A${HDR}:${lastCol}${HDR}`
+
+  const DATA_START = HDR + 1
+  rows.forEach((r, ri) => {
+    const row = ws.getRow(DATA_START + ri)
+    row.height = 16
+    const bg = ri % 2 === 0 ? C_ROW_ODD : C_ROW_EVEN
+    const br = border()
+    cols.forEach((c, ci) => {
+      const cell = row.getCell(ci + 1)
+      const v = c.value(r)
+      cell.value = v
+      cell.font = font()
+      cell.fill = solid(bg)
+      cell.border = br
+      cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+    })
+  })
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `expenses-table-${new Date().toISOString().slice(0, 10)}.xlsx`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

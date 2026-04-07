@@ -1,24 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAnimatedNumber } from '@shared/hooks'
+import {
+  REPORT_TYPES,
+  REPORT_GROUP_IDS,
+  reportGroupLabel,
+  reportSummaryUi,
+  reportTableSpec,
+  type ReportTypeId,
+  type ReportGroupId,
+} from '../model/reportsUiConfig'
 import { ReportsSkeleton } from './ReportsSkeleton'
-
-type ReportTypeId = 'time' | 'detailed-time' | 'detailed-expense' | 'contractor' | 'uninvoiced'
-type ReportGroupId = 'tasks' | 'clients' | 'projects' | 'team'
-
-const REPORT_TYPES: { id: ReportTypeId; label: string }[] = [
-  { id: 'time', label: 'Время' },
-  { id: 'detailed-time', label: 'Детальное время' },
-  { id: 'detailed-expense', label: 'Детальные расходы' },
-  { id: 'contractor', label: 'Подрядчики' },
-  { id: 'uninvoiced', label: 'Не выставленные' },
-]
-
-const REPORT_GROUPS: { id: ReportGroupId; label: string }[] = [
-  { id: 'tasks', label: 'Задачи' },
-  { id: 'clients', label: 'Клиенты' },
-  { id: 'projects', label: 'Проекты' },
-  { id: 'team', label: 'Команда' },
-]
 
 type PeriodGranularity = 'week' | 'month' | 'quarter' | 'year'
 const PERIOD_OPTIONS: { id: PeriodGranularity; label: string }[] = [
@@ -30,37 +21,44 @@ const PERIOD_OPTIONS: { id: PeriodGranularity; label: string }[] = [
 
 const IcoChevronLeft = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M15 18l-6-6 6-6"/>
+    <path d="M15 18l-6-6 6-6" />
   </svg>
 )
 const IcoChevronRight = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M9 18l6-6-6-6"/>
+    <path d="M9 18l6-6-6-6" />
   </svg>
 )
 const IcoChevronDown = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M6 9l6 6 6-6"/>
+    <path d="M6 9l6 6 6-6" />
   </svg>
 )
 const IcoFileText = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+    <line x1="10" y1="9" x2="8" y2="9" />
   </svg>
 )
 const IcoDownload = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
   </svg>
 )
 const IcoPrinter = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
   </svg>
 )
 const IcoSortUp = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="m18 15-6-6-6 6"/>
+    <path d="m18 15-6-6-6 6" />
   </svg>
 )
 
@@ -75,7 +73,7 @@ function fmtAmt(n: number, cur = 'UZS') {
 function formatPeriodLabel(date: Date, granularity: PeriodGranularity): string {
   const d = new Date(date)
   const pad = (n: number) => String(n).padStart(2, '0')
-  const months = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+  const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
   if (granularity === 'week') {
     const start = new Date(d)
     start.setDate(d.getDate() - d.getDay() + (d.getDay() === 0 ? -6 : 1))
@@ -97,11 +95,17 @@ function formatPeriodLabel(date: Date, granularity: PeriodGranularity): string {
   return `01 янв — 31 дек ${d.getFullYear()}`
 }
 
+function formatCardPrimary(unit: 'hours' | 'money' | 'count', n: number): string {
+  if (unit === 'hours') return fmtHours(n)
+  if (unit === 'money') return fmtAmt(Math.round(n))
+  return Math.round(n).toLocaleString('ru-RU')
+}
+
 export function ReportsPanel() {
   const [loading, setLoading] = useState(true)
   const [reportType, setReportType] = useState<ReportTypeId>('time')
   const [reportGroup, setReportGroup] = useState<ReportGroupId>('tasks')
-  const [periodDate, setPeriodDate] = useState(() => new Date(2026, 2, 15))
+  const [periodDate, setPeriodDate] = useState(() => new Date())
   const [periodGranularity, setPeriodGranularity] = useState<PeriodGranularity>('month')
   const [periodDropdown, setPeriodDropdown] = useState(false)
   const periodDropdownRef = useRef<HTMLDivElement>(null)
@@ -110,6 +114,10 @@ export function ReportsPanel() {
     const t = setTimeout(() => setLoading(false), 800)
     return () => clearTimeout(t)
   }, [])
+
+  useEffect(() => {
+    setReportGroup('tasks')
+  }, [reportType])
 
   useEffect(() => {
     if (!periodDropdown) return
@@ -123,6 +131,8 @@ export function ReportsPanel() {
   }, [periodDropdown])
 
   const periodLabel = formatPeriodLabel(periodDate, periodGranularity)
+  const summary = reportSummaryUi(reportType)
+  const tableSpec = reportTableSpec(reportType, reportGroup)
 
   function goPrevPeriod() {
     const d = new Date(periodDate)
@@ -147,7 +157,8 @@ export function ReportsPanel() {
   const billableHours = 0
   const nonBillableHours = 0
   const billablePct = 0
-  const maxTaskHours = tasks.length > 0 ? Math.max(...tasks.map((t) => t.hours)) : 0
+  const lineCount = 0
+  const maxTaskHours = tasks.length > 0 ? Math.max(...tasks.map(t => t.hours)) : 0
 
   const animTotalHours = useAnimatedNumber(totalHours, { duration: 700, enabled: !loading })
   const animBillablePct = useAnimatedNumber(billablePct, { duration: 600, enabled: !loading })
@@ -156,13 +167,24 @@ export function ReportsPanel() {
   const animAmountUzs = useAnimatedNumber(0, { duration: 800, enabled: !loading })
   const animAmountEur = useAnimatedNumber(0, { duration: 750, enabled: !loading })
   const animAmountUsd = useAnimatedNumber(0, { duration: 750, enabled: !loading })
+  const animLineCount = useAnimatedNumber(lineCount, { duration: 500, enabled: !loading })
+
+  const card1Number = summary.card1Unit === 'money' ? animAmountUzs : animTotalHours
+  const card4Number = summary.card4Unit === 'count' ? animLineCount : animAmountUzs
+
+  const pieLeftLegend =
+    summary.pieLeftUnit === 'money' ? fmtAmt(Math.round(animAmountUzs)) : fmtHours(animBillableHours)
+  const pieRightLegend =
+    summary.pieRightUnit === 'money' ? fmtAmt(Math.round(animAmountUzs)) : fmtHours(animNonBillableHours)
+
+  const showTaskBreakdownBar = reportType === 'time' && reportGroup === 'tasks' && tasks.length > 0
 
   if (loading) return <ReportsSkeleton />
 
   return (
     <div className="tt-reports">
-<nav className="tt-reports__type-nav" role="tablist">
-        {REPORT_TYPES.map((tab) => (
+      <nav className="tt-reports__type-nav" role="tablist">
+        {REPORT_TYPES.map(tab => (
           <button
             key={tab.id}
             type="button"
@@ -175,13 +197,13 @@ export function ReportsPanel() {
           </button>
         ))}
       </nav>
-<div className="tt-reports__header">
+      <div className="tt-reports__header">
         <div className="tt-reports__header-left">
           <button type="button" className="tt-reports__nav-btn" onClick={goPrevPeriod} aria-label="Предыдущий период">
             <IcoChevronLeft />
           </button>
           <h2 className="tt-reports__period-title">
-            {periodGranularity === 'month' ? 'Этот месяц' : periodGranularity === 'week' ? 'Эта неделя' : periodGranularity === 'quarter' ? 'Этот квартал' : 'Этот год'}: {periodLabel}
+            {`${periodGranularity === 'month' ? 'Этот месяц' : periodGranularity === 'week' ? 'Эта неделя' : periodGranularity === 'quarter' ? 'Этот квартал' : 'Этот год'}: ${periodLabel}`}
           </h2>
           <button type="button" className="tt-reports__nav-btn" onClick={goNextPeriod} aria-label="Следующий период">
             <IcoChevronRight />
@@ -195,15 +217,15 @@ export function ReportsPanel() {
             <button
               type="button"
               className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--dropdown"
-              onClick={() => setPeriodDropdown((v) => !v)}
+              onClick={() => setPeriodDropdown(v => !v)}
               aria-expanded={periodDropdown}
               aria-haspopup="listbox"
             >
-              {PERIOD_OPTIONS.find((o) => o.id === periodGranularity)?.label ?? 'Месяц'} <IcoChevronDown />
+              {PERIOD_OPTIONS.find(o => o.id === periodGranularity)?.label ?? 'Месяц'} <IcoChevronDown />
             </button>
             {periodDropdown && (
               <div className="tt-reports__period-dropdown" role="listbox">
-                {PERIOD_OPTIONS.map((opt) => (
+                {PERIOD_OPTIONS.map(opt => (
                   <button
                     key={opt.id}
                     type="button"
@@ -223,10 +245,10 @@ export function ReportsPanel() {
           </div>
         </div>
       </div>
-<div className="tt-reports__summary">
+      <div className="tt-reports__summary">
         <div className="tt-reports__summary-card tt-reports__summary-hours">
-          <span className="tt-reports__summary-label">Всего часов</span>
-          <span className="tt-reports__summary-value">{fmtHours(animTotalHours)}</span>
+          <span className="tt-reports__summary-label">{summary.card1Label}</span>
+          <span className="tt-reports__summary-value">{formatCardPrimary(summary.card1Unit, card1Number)}</span>
         </div>
         <div className="tt-reports__summary-card tt-reports__summary-chart">
           <div className="tt-reports__pie-wrap">
@@ -259,49 +281,59 @@ export function ReportsPanel() {
           <div className="tt-reports__pie-legend">
             <span className="tt-reports__legend-item">
               <span className="tt-reports__legend-dot tt-reports__legend-dot--billable" />
-              Оплачиваемые: {fmtHours(animBillableHours)}
+              {summary.pieLeftLabel}: {pieLeftLegend}
             </span>
             <span className="tt-reports__legend-item">
               <span className="tt-reports__legend-dot tt-reports__legend-dot--nonbillable" />
-              Неоплачиваемые: {fmtHours(animNonBillableHours)}
+              {summary.pieRightLabel}: {pieRightLegend}
             </span>
           </div>
         </div>
         <div className="tt-reports__summary-card tt-reports__summary-amount">
-          <span className="tt-reports__summary-label">Оплачиваемая сумма</span>
+          <span className="tt-reports__summary-label">{summary.card3Label}</span>
           <span className="tt-reports__summary-value">{fmtAmt(Math.round(animAmountUzs))}</span>
-          <span className="tt-reports__summary-sub">{fmtAmt(Math.round(animAmountEur), 'EUR')} — {fmtAmt(Math.round(animAmountUsd), 'USD')}</span>
-          <label className="tt-reports__summary-check">
-            <input type="checkbox" defaultChecked />
-            Включить проекты с фикс. оплатой
-          </label>
+          <span className="tt-reports__summary-sub">
+            {fmtAmt(Math.round(animAmountEur), 'EUR')} — {fmtAmt(Math.round(animAmountUsd), 'USD')}
+          </span>
+          {summary.card3ShowFixedCheckbox && (
+            <label className="tt-reports__summary-check">
+              <input type="checkbox" defaultChecked />
+              Включить проекты с фикс. оплатой
+            </label>
+          )}
         </div>
         <div className="tt-reports__summary-card tt-reports__summary-uninvoiced">
-          <span className="tt-reports__summary-label">Не выставленная сумма</span>
-          <span className="tt-reports__summary-value">{fmtAmt(Math.round(animAmountUzs))}</span>
-          <span className="tt-reports__summary-sub">{fmtAmt(Math.round(animAmountEur), 'EUR')} — {fmtAmt(Math.round(animAmountUsd), 'USD')}</span>
-          <span className="tt-reports__summary-note">Исключая проекты с фикс. оплатой</span>
+          <span className="tt-reports__summary-label">{summary.card4Label}</span>
+          <span className="tt-reports__summary-value">
+            {formatCardPrimary(summary.card4Unit, card4Number)}
+          </span>
+          {summary.card4Unit === 'money' && (
+            <span className="tt-reports__summary-sub">
+              {fmtAmt(Math.round(animAmountEur), 'EUR')} — {fmtAmt(Math.round(animAmountUsd), 'USD')}
+            </span>
+          )}
+          {summary.card4Note && <span className="tt-reports__summary-note">{summary.card4Note}</span>}
         </div>
       </div>
-<nav className="tt-reports__group-nav" role="tablist">
-        {REPORT_GROUPS.map((tab) => (
+      <nav className="tt-reports__group-nav" role="tablist">
+        {REPORT_GROUP_IDS.map(id => (
           <button
-            key={tab.id}
+            key={id}
             type="button"
             role="tab"
-            aria-selected={reportGroup === tab.id}
-            className={`tt-reports__group-tab${reportGroup === tab.id ? ' tt-reports__group-tab--active' : ''}`}
-            onClick={() => setReportGroup(tab.id)}
+            aria-selected={reportGroup === id}
+            className={`tt-reports__group-tab${reportGroup === id ? ' tt-reports__group-tab--active' : ''}`}
+            onClick={() => setReportGroup(id)}
           >
-            {tab.label}
+            {reportGroupLabel(reportType, id)}
           </button>
         ))}
       </nav>
-{reportGroup === 'tasks' && (
-        <div className="tt-reports__content">
-          <div className="tt-reports__content-header">
-            <div className="tt-reports__breakdown-bar-wrap">
-              <span className="tt-reports__breakdown-label">Разбивка по задачам, отсортированная по часам.</span>
+      <div className="tt-reports__content">
+        <div className="tt-reports__content-header">
+          <div className="tt-reports__breakdown-bar-wrap">
+            <span className="tt-reports__breakdown-label">{tableSpec.breakdownHint}</span>
+            {showTaskBreakdownBar && (
               <div className="tt-reports__breakdown-bar">
                 {tasks.slice(0, 6).map((t, i) => (
                   <span
@@ -314,60 +346,71 @@ export function ReportsPanel() {
                   />
                 ))}
               </div>
-            </div>
-            <div className="tt-reports__content-actions">
-              <button type="button" className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--icon">
-                <IcoFileText /> Детальный отчёт
-              </button>
-              <button type="button" className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--icon">
-                <IcoDownload /> Экспорт
-              </button>
-              <button type="button" className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--icon" aria-label="Печать">
-                <IcoPrinter />
-              </button>
-            </div>
+            )}
           </div>
+          <div className="tt-reports__content-actions">
+            <button type="button" className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--icon">
+              <IcoFileText /> Детальный отчёт
+            </button>
+            <button type="button" className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--icon">
+              <IcoDownload /> Экспорт
+            </button>
+            <button
+              type="button"
+              className="tt-reports__btn tt-reports__btn--outline tt-reports__btn--icon"
+              aria-label="Печать"
+            >
+              <IcoPrinter />
+            </button>
+          </div>
+        </div>
 
-          <div className="tt-reports__table-wrap">
-            <table className="tt-reports__table">
-              <thead>
-                <tr>
-                  <th>Название</th>
-                  <th className="tt-reports__th--sortable">
-                    Часы <IcoSortUp />
+        <div className="tt-reports__table-wrap">
+          <table className="tt-reports__table">
+            <thead>
+              <tr>
+                {tableSpec.columns.map(col => (
+                  <th key={col.key} className={col.className}>
+                    {col.label}
+                    {col.className?.includes('sortable') ? (
+                      <>
+                        {' '}
+                        <IcoSortUp />
+                      </>
+                    ) : null}
                   </th>
-                  <th>Оплачиваемые часы</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task) => {
-                  const pct = task.hours > 0 ? Math.round((task.billableHours / task.hours) * 100) : 0
-                  const barPct = maxTaskHours > 0 ? (task.hours / maxTaskHours) * 100 : 0
-                  return (
-                    <tr key={task.name}>
-                      <td>{task.name}</td>
-                      <td>
-                        <span className="tt-reports__hours-link">{fmtHours(task.hours)}</span>
-                        <span className="tt-reports__hours-bar" style={{ width: `${barPct}%` }} />
-                      </td>
-                      <td>
-                        {fmtHours(task.billableHours)} ({pct}%)
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {reportType === 'time' && reportGroup === 'tasks' && tasks.length > 0
+                ? tasks.map(task => {
+                    const pct = task.hours > 0 ? Math.round((task.billableHours / task.hours) * 100) : 0
+                    const barPct = maxTaskHours > 0 ? (task.hours / maxTaskHours) * 100 : 0
+                    return (
+                      <tr key={task.name}>
+                        <td>{task.name}</td>
+                        <td>
+                          <span className="tt-reports__hours-link">{fmtHours(task.hours)}</span>
+                          <span className="tt-reports__hours-bar" style={{ width: `${barPct}%` }} />
+                        </td>
+                        <td>
+                          {fmtHours(task.billableHours)} ({pct}%)
+                        </td>
+                      </tr>
+                    )
+                  })
+                : (
+                    <tr>
+                      <td className="tt-reports__td--empty" colSpan={tableSpec.columns.length}>
+                        {tableSpec.emptyText}
                       </td>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                  )}
+            </tbody>
+          </table>
         </div>
-      )}
-{reportGroup !== 'tasks' && (
-        <div className="tt-reports__content tt-reports__content--placeholder">
-          <p className="tt-reports__placeholder-text">
-            Раздел «{REPORT_GROUPS.find((g) => g.id === reportGroup)?.label}» в разработке
-          </p>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

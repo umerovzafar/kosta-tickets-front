@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getUsers } from '@entities/user'
+import { listTimeTrackingUsers } from '@entities/time-tracking'
 import type { TimeUserRow, TimeUsersTotals } from '../model/types'
 import type { TimeTrackingRole } from '../model/constants'
 import { TimeUsersSummary } from './TimeUsersSummary'
@@ -23,9 +24,16 @@ export function TimeUsersPanel() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    getUsers()
-      .then((data) => {
+    Promise.all([getUsers(), listTimeTrackingUsers().catch(() => [])])
+      .then(([data, ttRows]) => {
         if (cancelled) return
+        const capById = new Map<number, number>()
+        for (const r of ttRows) {
+          if (r.weekly_capacity_hours != null) {
+            const n = Number(r.weekly_capacity_hours)
+            if (Number.isFinite(n)) capById.set(r.id, n)
+          }
+        }
         const ttUsers: TimeUserRow[] = data
           .filter((u) => u.time_tracking_role !== null)
           .map((u) => ({
@@ -38,7 +46,7 @@ export function TimeUsersPanel() {
             hours: 0,
             billableHours: 0,
             utilizationPercent: 0,
-            capacity: 35,
+            capacity: capById.get(u.id) ?? 35,
           }))
         setUsers(ttUsers)
       })

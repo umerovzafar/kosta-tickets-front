@@ -1,8 +1,16 @@
-import { useState, useMemo, useCallback } from 'react'
-import { useParams, useNavigate, Navigate } from 'react-router-dom'
+import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useParams, useNavigate, Navigate, useSearchParams } from 'react-router-dom'
 import { routes } from '@shared/config'
 import { useCurrentUser } from '@shared/hooks'
 import { canAccessTimeTracking } from '@pages/time-tracking/model/timeTrackingAccess'
+import {
+  listTimeManagerClients,
+  listClientProjects,
+  getClientProject,
+  isForbiddenError,
+} from '@entities/time-tracking'
+import { mapClientProjectToProjectRow } from '@pages/time-tracking/model/mapClientProjectToProjectRow'
+import type { ProjectRow } from '@pages/time-tracking/model/types'
 import {
   ResponsiveContainer,
   LineChart, Line,
@@ -12,7 +20,6 @@ import {
   ReferenceLine, ReferenceArea,
   Dot,
 } from 'recharts'
-import { MOCK_PROJECTS } from '../../time-tracking/model/constants'
 import './ProjectDetailPage.css'
 
 function fmtAmt(n: number, cur = 'UZS') {
@@ -416,32 +423,40 @@ const TYPE_COLOR: Record<string, { color: string; bg: string }> = {
   'Без бюджета':          { color: '#64748b', bg: 'rgba(100,116,139,0.08)'},
 }
 
-export function ProjectDetailPage() {
-  const { id }    = useParams<{ id: string }>()
-  const navigate  = useNavigate()
-  const { user, loading: userLoading } = useCurrentUser()
-  const [chartTab,    setChartTab]    = useState<'progress' | 'hours'>('progress')
+async function loadProjectDetailRow(projectId: string, clientIdHint: string | null): Promise<ProjectRow | null> {
+  if (clientIdHint) {
+    try {
+      const clients = await listTimeManagerClients()
+      const client = clients.find((c) => c.id === clientIdHint)
+      if (client) {
+        const p = await getClientProject(clientIdHint, projectId)
+        return mapClientProjectToProjectRow(p, client)
+      }
+    } catch {
+      /* неверный ?client= — ищем дальше */
+    }
+  }
+
+  const clients = await listTimeManagerClients()
+  for (const c of clients) {
+    try {
+      const projs = await listClientProjects(c.id)
+      const hit = projs.find((x) => x.id === projectId)
+      if (hit) return mapClientProjectToProjectRow(hit, c)
+    } catch (e) {
+      if (isForbiddenError(e)) continue
+      throw e
+    }
+  }
+  return null
+}
+
+function ProjectDetailBody({ project }: { project: ProjectRow }) {
+  const navigate = useNavigate()
+  const [chartTab, setChartTab] = useState<'progress' | 'hours'>('progress')
   const [actionsOpen, setActionsOpen] = useState(false)
-  const [hoverIdx,    setHoverIdx]    = useState<number | null>(null)
-  const [detailTab,   setDetailTab]   = useState<DetailTabId>('tasks')
-
-  const project = MOCK_PROJECTS.find(p => p.id === id)
-
-  if (userLoading) return null
-  if (!canAccessTimeTracking(user)) {
-    return <Navigate to={routes.timeTracking} replace />
-  }
-
-  if (!project) {
-    return (
-      <div className="pdp pdp--error">
-        <p>Проект не найден</p>
-        <button className="pdp__back-btn" onClick={() => navigate(-1)}>
-          <IcoArrowLeft /> Назад
-        </button>
-      </div>
-    )
-  }
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const [detailTab, setDetailTab] = useState<DetailTabId>('tasks')
 
   const hasBudget    = project.budget != null
   const remaining    = hasBudget ? project.budget! - project.spent : null
@@ -788,4 +803,76 @@ export function ProjectDetailPage() {
       </div>
     </div>
   )
+}
+
+export function ProjectDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
+  const clientHint = searchParams.get('client')
+  const navigate = useNavigate()
+  const { user, loading: userLoading } = useCurrentUser()
+  const [project, setProject] = useState<ProjectRow | null | undefined>(undefined)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!id || userLoading) return
+    if (!canAccessTimeTracking(user)) return
+
+    let cancelled = false
+    setProject(undefined)
+    setLoadError(null)
+
+    void (async () => {
+      try {
+        const row = await loadProjectDetailRow(id, clientHint)
+        if (!cancelled) setProject(row)
+      } catch (e) {
+        if (!cancelled) {
+          setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить проект')
+          setProject(null)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [id, clientHint, user, userLoading])
+
+  if (userLoading) return null
+  if (!canAccessTimeTracking(user)) {
+    return <Navigate to={routes.timeTracking} replace />
+  }
+
+  if (loadError) {
+    return (
+      <div className="pdp pdp--error">
+        <p>{loadError}</p>
+        <button type="button" className="pdp__back-btn" onClick={() => navigate(routes.timeTracking)}>
+          <IcoArrowLeft /> К учёту времени
+        </button>
+      </div>
+    )
+  }
+
+  if (project === undefined) {
+    return (
+      <div className="pdp pdp--loading" role="status">
+        <p>Загрузка проекта…</p>
+      </div>
+    )
+  }
+
+  if (project === null) {
+    return (
+      <div className="pdp pdp--error">
+        <p>Проект не найден</p>
+        <button type="button" className="pdp__back-btn" onClick={() => navigate(-1)}>
+          <IcoArrowLeft /> Назад
+        </button>
+      </div>
+    )
+  }
+
+  return <ProjectDetailBody project={project} />
 }

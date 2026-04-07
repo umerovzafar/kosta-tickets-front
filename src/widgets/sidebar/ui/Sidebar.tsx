@@ -23,6 +23,7 @@ import {
   IconUser,
   IconChevronLeft,
   IconChevronRight,
+  IconCalendarCheck,
 } from './SidebarIcons'
 import './Sidebar.css'
 
@@ -37,10 +38,24 @@ function getInitials(displayName: string, email: string): string {
   return '?'
 }
 
-const navItems = [
+type SidebarNavItem = {
+  to: string
+  label: string
+  icon: ComponentType
+  /** Только при роли «Администратор» (как adminOnly в ProtectedRoute). */
+  adminOnly?: boolean
+}
+
+const navItems: SidebarNavItem[] = [
   { to: routes.home, label: 'Главная', icon: IconHome },
   { to: routes.admin, label: 'Админ-панель', icon: IconGear },
   { to: routes.attendance, label: 'Посещаемость', icon: IconClock },
+  {
+    to: routes.vacationSchedule,
+    label: 'График отпусков',
+    icon: IconCalendarCheck,
+    adminOnly: true,
+  },
   { to: routes.inventory, label: 'Инвентаризация', icon: IconBox },
   { to: routes.timeTracking, label: 'Учёт времени', icon: IconStopwatch },
   { to: routes.todo, label: 'Список дел', icon: IconList },
@@ -105,6 +120,12 @@ export function Sidebar({
 
   if (!loading && !canAccessTimeTracking(user)) {
     visibleNavItems = visibleNavItems.filter((item) => item.label !== 'Учёт времени')
+  }
+
+  if (!loading) {
+    visibleNavItems = visibleNavItems.filter(
+      (item) => !item.adminOnly || user?.role === 'Администратор',
+    )
   }
 
   const sidebarContent = (
@@ -179,7 +200,7 @@ export function Sidebar({
         <nav className="sidebar__nav">
           <ul className="sidebar__nav-list">
             {visibleNavItems.map(({ to, label, icon: Icon }) => {
-              const IconComponent = Icon as ComponentType
+              const IconComponent = Icon
               return (
                 <li key={label}>
                   <AnimatedNavLink

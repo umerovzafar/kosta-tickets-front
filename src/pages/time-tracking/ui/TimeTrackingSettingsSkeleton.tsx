@@ -7,19 +7,20 @@ export function TimeTrackingSettingsSkeleton() {
         <span className="tt-skel__nav-tab" />
       </nav>
 <div className="tt-settings__content">
-        <span className="tt-skel__title" />
-
-        <div className="tt-settings__toolbar">
-          <div className="tt-settings__toolbar-left">
-            <span className="tt-skel__btn tt-skel__btn--green" />
-            <span className="tt-skel__btn" />
-            <span className="tt-skel__btn" />
-          </div>
+        <div className="tt-settings__header-row tt-settings__header-row--skeleton">
+          <span className="tt-skel__title" />
           <span className="tt-skel__btn tt-skel__btn--link" />
         </div>
 
-        <div className="tt-settings__search-wrap">
-          <span className="tt-skel__search" />
+        <div className="tt-settings__actions-row">
+          <div className="tt-settings__toolbar-left">
+            <span className="tt-skel__btn tt-skel__btn--primary" />
+            <span className="tt-skel__btn" />
+            <span className="tt-skel__btn" />
+          </div>
+          <div className="tt-settings__search-wrap">
+            <span className="tt-skel__search" />
+          </div>
         </div>
 
         <div className="tt-settings__list">

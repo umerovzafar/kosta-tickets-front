@@ -1,4 +1,10 @@
-import type { ExpenseAmountCurrency, ExpenseStatus, ExpenseType, PaymentMethod } from './types'
+import type {
+  ExpenseAmountCurrency,
+  ExpenseStatus,
+  ExpenseType,
+  PartnerExpenseCategory,
+  PaymentMethod,
+} from './types'
 
 /**
  * Все статусы для фильтра и отображения в списке /expenses
@@ -39,6 +45,7 @@ export const TYPE_META: Record<ExpenseType, { label: string }> = {
   services:       { label: 'Сервисы' },
   entertainment:  { label: 'Представительские' },
   client_expense: { label: 'За клиента' },
+  partner_expense: { label: 'Расход партнёра' },
   other:          { label: 'Прочее' },
 }
 
@@ -62,6 +69,26 @@ export const EXPENSE_CURRENCIES: { value: ExpenseAmountCurrency; label: string }
   { value: 'EUR', label: 'Евро' },
 ]
 
+export const PARTNER_EXPENSE_CATEGORY_META: Record<PartnerExpenseCategory, { label: string }> = {
+  partner_office:         { label: 'Офис и административные расходы' },
+  partner_travel:         { label: 'Командировки и проезд' },
+  partner_representation: { label: 'Представительские' },
+  partner_marketing:      { label: 'Маркетинг и PR' },
+  partner_professional:   { label: 'Профессиональные услуги' },
+  partner_equipment:      { label: 'IT и оборудование' },
+  partner_other:          { label: 'Прочее' },
+}
+
+export const PARTNER_EXPENSE_CATEGORIES: { value: PartnerExpenseCategory; label: string }[] = [
+  { value: 'partner_office',         label: 'Офис и административные расходы' },
+  { value: 'partner_travel',         label: 'Командировки и проезд' },
+  { value: 'partner_representation', label: 'Представительские' },
+  { value: 'partner_marketing',      label: 'Маркетинг и PR' },
+  { value: 'partner_professional',   label: 'Профессиональные услуги' },
+  { value: 'partner_equipment',      label: 'IT и оборудование' },
+  { value: 'partner_other',          label: 'Прочее' },
+]
+
 export const EXPENSE_TYPES: { value: ExpenseType; label: string }[] = [
   { value: 'transport',      label: 'Транспорт' },
   { value: 'food',           label: 'Питание' },
@@ -70,6 +97,7 @@ export const EXPENSE_TYPES: { value: ExpenseType; label: string }[] = [
   { value: 'services',       label: 'Сервисы' },
   { value: 'entertainment',  label: 'Представительские' },
   { value: 'client_expense', label: 'За клиента' },
+  { value: 'partner_expense', label: 'Расход партнёра' },
   { value: 'other',          label: 'Прочее' },
 ]
 

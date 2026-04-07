@@ -131,7 +131,9 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
             <p className="tsp-m__err">Нет доступных проектов. Добавьте проекты в разделе Проекты.</p>
           </div>
           <div className="tsp-m__foot">
-            <button className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>Закрыть</button>
+            <button type="button" className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>
+              Закрыть
+            </button>
           </div>
         </div>
       </div>,
@@ -188,10 +190,12 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
         </div>
 
         <div className="tsp-m__foot">
-          <button className="tsp-m__btn tsp-m__btn--ok" onClick={handleSave}>
+          <button type="button" className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>
+            Отмена
+          </button>
+          <button type="button" className="tsp-m__btn tsp-m__btn--ok" onClick={handleSave}>
             {entry ? 'Сохранить' : 'Добавить'}
           </button>
-          <button className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>Отмена</button>
         </div>
       </div>
     </div>,

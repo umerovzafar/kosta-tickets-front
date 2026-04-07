@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, type ReactNode } from 'react'
 import { useMediaQuery } from '@shared/hooks'
 import { getSidebarCollapsed, setSidebarCollapsed } from '@shared/lib/sidebarCollapsed'
 import { Sidebar, IconMenu } from '@widgets/sidebar'
@@ -6,9 +6,10 @@ import './ExpensesPage.css'
 
 type ExpensesShellProps = {
   title: string
+  children?: ReactNode
 }
 
-export function ExpensesShell({ title }: ExpensesShellProps) {
+export function ExpensesShell({ title, children }: ExpensesShellProps) {
   const isMobile = useMediaQuery('(max-width: 768px)')
   const [isCollapsed, setIsCollapsed] = useState(getSidebarCollapsed)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
@@ -46,7 +47,7 @@ export function ExpensesShell({ title }: ExpensesShellProps) {
             <h1 className="expenses-page__title">{title}</h1>
           </div>
         </header>
-        <div className="expenses-page__content" />
+        <div className="expenses-page__content">{children}</div>
       </main>
     </div>
   )
