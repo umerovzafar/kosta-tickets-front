@@ -1,14 +1,13 @@
 import type { CSSProperties } from 'react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   VACATION_ABSENCE_LEGEND,
   VACATION_KIND_COLORS,
   VACATION_MONTH_NAMES,
   loadVacationMarks,
+  parseVacationCellKey,
   saveVacationMarks,
   vacationCellKey,
-  vacationCountMarkedDaysForUser,
-  vacationCountMarkedDaysForUserInMonth,
   vacationDayIsWeekendRu,
   vacationMonthHeaderSpans,
   vacationWeekdayShortRu,
@@ -25,6 +24,11 @@ type Anchor = { userIndex: number; colIndex: number }
 type VacationContinuousTableProps = {
   year: number
   employees: VacationScheduleEmployeeRow[]
+}
+
+type DayColMeta = {
+  wknd: boolean
+  monthStart: boolean
 }
 
 function keysInRectangle(
@@ -51,6 +55,68 @@ function keysInRectangle(
   return keys
 }
 
+/** Счётчики по сотруднику за один проход по marks (без O(сотр × дни) на кадр) */
+function buildUserMarkStats(
+  marks: VacationMarksState,
+  year: number,
+  employeeIds: Set<number>,
+): Map<number, { months: number[]; year: number }> {
+  const stats = new Map<number, { months: number[]; year: number }>()
+  for (const id of employeeIds) {
+    stats.set(id, { months: Array(12).fill(0), year: 0 })
+  }
+  for (const key of Object.keys(marks)) {
+    const p = parseVacationCellKey(key)
+    if (!p || p.year !== year) continue
+    const s = stats.get(p.userId)
+    if (!s) continue
+    s.months[p.monthIndex] += 1
+    s.year += 1
+  }
+  return stats
+}
+
+type VacationDayCellProps = {
+  userId: number
+  colIndex: number
+  kind: VacationAbsenceKind | undefined
+  isSelected: boolean
+  isWeekendEmpty: boolean
+  isMonthStart: boolean
+  onCellMouseDown: (e: React.MouseEvent, userId: number, colIndex: number) => void
+  onCellMouseEnter: (userId: number, colIndex: number) => void
+}
+
+const VacationDayCell = memo(function VacationDayCell({
+  userId,
+  colIndex,
+  kind,
+  isSelected,
+  isWeekendEmpty,
+  isMonthStart,
+  onCellMouseDown,
+  onCellMouseEnter,
+}: VacationDayCellProps) {
+  const bg = kind ? VACATION_KIND_COLORS[kind] : undefined
+  return (
+    <td
+      role="gridcell"
+      aria-selected={isSelected}
+      className={[
+        'vac-cont__cell',
+        isWeekendEmpty && 'vac-cont__cell--weekend',
+        isMonthStart && 'vac-cont__cell--month-start',
+        isSelected && 'vac-cont__cell--selected',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      style={bg ? ({ backgroundColor: bg } as CSSProperties) : undefined}
+      onMouseDown={(e) => onCellMouseDown(e, userId, colIndex)}
+      onMouseEnter={() => onCellMouseEnter(userId, colIndex)}
+    />
+  )
+})
+
 export function VacationContinuousTable({ year, employees }: VacationContinuousTableProps) {
   const dayColumns = useMemo(() => vacationYearDayColumns(year), [year])
   const monthSpans = useMemo(() => vacationMonthHeaderSpans(dayColumns), [dayColumns])
@@ -62,6 +128,23 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
     return buckets
   }, [dayColumns])
 
+  const dayMeta = useMemo<DayColMeta[]>(
+    () =>
+      dayColumns.map((col) => ({
+        wknd: vacationDayIsWeekendRu(year, col.monthIndex, col.day),
+        monthStart: col.day === 1 && col.monthIndex > 0,
+      })),
+    [dayColumns, year],
+  )
+
+  const userIndexById = useMemo(() => {
+    const m = new Map<number, number>()
+    employees.forEach((e, i) => m.set(e.id, i))
+    return m
+  }, [employees])
+
+  const employeeIdSet = useMemo(() => new Set(employees.map((e) => e.id)), [employees])
+
   const [marks, setMarks] = useState<VacationMarksState>(() => loadVacationMarks(year))
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const anchorRef = useRef<Anchor | null>(null)
@@ -69,11 +152,37 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
   const ctrlDragRef = useRef(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const selectionRafRef = useRef<number | null>(null)
+  const pendingSelectionRef = useRef<Set<string> | null>(null)
+
+  const ixRef = useRef({
+    year,
+    employees,
+    dayColumns,
+    userIndexById,
+  })
+  ixRef.current = { year, employees, dayColumns, userIndexById }
+
+  const userStats = useMemo(
+    () => buildUserMarkStats(marks, year, employeeIdSet),
+    [marks, year, employeeIdSet],
+  )
+
   useEffect(() => {
     setMarks(loadVacationMarks(year))
     setSelected(new Set())
     anchorRef.current = null
   }, [year])
+
+  useEffect(
+    () => () => {
+      if (selectionRafRef.current !== null) {
+        cancelAnimationFrame(selectionRafRef.current)
+        selectionRafRef.current = null
+      }
+    },
+    [],
+  )
 
   const scheduleSave = useCallback(
     (next: VacationMarksState) => {
@@ -111,66 +220,84 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const findCellPosition = useCallback(
-    (userId: number, colIndex: number): Anchor | null => {
-      const userIndex = employees.findIndex((e) => e.id === userId)
-      if (userIndex < 0 || colIndex < 0 || colIndex >= dayColumns.length) return null
-      return { userIndex, colIndex }
+  const flushSelectionRaf = useCallback(() => {
+    selectionRafRef.current = null
+    const p = pendingSelectionRef.current
+    pendingSelectionRef.current = null
+    if (p) setSelected(new Set(p))
+  }, [])
+
+  const queueSelection = useCallback(
+    (next: Set<string>) => {
+      pendingSelectionRef.current = next
+      if (selectionRafRef.current === null) {
+        selectionRafRef.current = requestAnimationFrame(flushSelectionRaf)
+      }
     },
-    [employees, dayColumns.length],
+    [flushSelectionRaf],
   )
 
-  const handleCellMouseDown = useCallback(
-    (e: React.MouseEvent, userId: number, colIndex: number) => {
-      e.preventDefault()
-      const pos = findCellPosition(userId, colIndex)
-      if (!pos) return
-      const key = vacationCellKey(userId, year, dayColumns[colIndex]!.monthIndex, dayColumns[colIndex]!.day)
+  const findCellPosition = useCallback((userId: number, colIndex: number): Anchor | null => {
+    const { userIndexById: map, dayColumns: cols } = ixRef.current
+    const userIndex = map.get(userId)
+    if (userIndex === undefined || colIndex < 0 || colIndex >= cols.length) return null
+    return { userIndex, colIndex }
+  }, [])
 
-      if (e.shiftKey && anchorRef.current) {
-        const keys = keysInRectangle(year, employees, dayColumns, anchorRef.current, pos)
-        setSelected(new Set(keys))
-        isDraggingRef.current = false
-        return
-      }
+  const handleCellMouseDown = useCallback((e: React.MouseEvent, userId: number, colIndex: number) => {
+    e.preventDefault()
+    const { year: y, employees: em, dayColumns: cols } = ixRef.current
+    const pos = findCellPosition(userId, colIndex)
+    if (!pos) return
+    const key = vacationCellKey(userId, y, cols[colIndex]!.monthIndex, cols[colIndex]!.day)
 
-      if (e.metaKey || e.ctrlKey) {
-        setSelected((prev) => {
-          const n = new Set(prev)
-          if (n.has(key)) n.delete(key)
-          else n.add(key)
-          return n
-        })
-        anchorRef.current = pos
-        isDraggingRef.current = true
-        ctrlDragRef.current = true
-        return
-      }
+    if (e.shiftKey && anchorRef.current) {
+      const keys = keysInRectangle(y, em, cols, anchorRef.current, pos)
+      setSelected(new Set(keys))
+      isDraggingRef.current = false
+      return
+    }
 
+    if (e.metaKey || e.ctrlKey) {
+      setSelected((prev) => {
+        const n = new Set(prev)
+        if (n.has(key)) n.delete(key)
+        else n.add(key)
+        return n
+      })
       anchorRef.current = pos
       isDraggingRef.current = true
-      ctrlDragRef.current = false
-      setSelected(new Set([key]))
-    },
-    [dayColumns, employees, findCellPosition, year],
-  )
+      ctrlDragRef.current = true
+      return
+    }
+
+    anchorRef.current = pos
+    isDraggingRef.current = true
+    ctrlDragRef.current = false
+    setSelected(new Set([key]))
+  }, [findCellPosition])
 
   const handleCellMouseEnter = useCallback(
     (userId: number, colIndex: number) => {
       if (!isDraggingRef.current) return
+      const { year: y, employees: em, dayColumns: cols } = ixRef.current
       const pos = findCellPosition(userId, colIndex)
       if (!pos || !anchorRef.current) return
 
       if (ctrlDragRef.current) {
-        const key = vacationCellKey(userId, year, dayColumns[colIndex]!.monthIndex, dayColumns[colIndex]!.day)
-        setSelected((prev) => new Set(prev).add(key))
+        const key = vacationCellKey(userId, y, cols[colIndex]!.monthIndex, cols[colIndex]!.day)
+        setSelected((prev) => {
+          const n = new Set(prev)
+          n.add(key)
+          return n
+        })
         return
       }
 
-      const keys = keysInRectangle(year, employees, dayColumns, anchorRef.current, pos)
-      setSelected(new Set(keys))
+      const keys = keysInRectangle(y, em, cols, anchorRef.current, pos)
+      queueSelection(new Set(keys))
     },
-    [dayColumns, employees, findCellPosition, year],
+    [findCellPosition, queueSelection],
   )
 
   const applyKind = useCallback(
@@ -276,17 +403,16 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
               <th className="vac-cont__sticky-name" rowSpan={2} scope="col">
                 ФИО
               </th>
-              {dayColumns.map((col) => {
-                const wknd = vacationDayIsWeekendRu(year, col.monthIndex, col.day)
-                const monthStart = col.day === 1 && col.monthIndex > 0
+              {dayColumns.map((col, i) => {
+                const meta = dayMeta[i]!
                 return (
                   <th
                     key={`d-${col.colIndex}`}
                     scope="col"
                     className={[
                       'vac-cont__th-day',
-                      wknd && 'vac-cont__th-day--weekend',
-                      monthStart && 'vac-cont__th-day--month-start',
+                      meta.wknd && 'vac-cont__th-day--weekend',
+                      meta.monthStart && 'vac-cont__th-day--month-start',
                     ]
                       .filter(Boolean)
                       .join(' ')}
@@ -297,17 +423,16 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
               })}
             </tr>
             <tr>
-              {dayColumns.map((col) => {
-                const wknd = vacationDayIsWeekendRu(year, col.monthIndex, col.day)
-                const monthStart = col.day === 1 && col.monthIndex > 0
+              {dayColumns.map((col, i) => {
+                const meta = dayMeta[i]!
                 return (
                   <th
                     key={`w-${col.colIndex}`}
                     scope="col"
                     className={[
                       'vac-cont__th-wd',
-                      wknd && 'vac-cont__th-wd--weekend',
-                      monthStart && 'vac-cont__th-wd--month-start',
+                      meta.wknd && 'vac-cont__th-wd--weekend',
+                      meta.monthStart && 'vac-cont__th-wd--month-start',
                     ]
                       .filter(Boolean)
                       .join(' ')}
@@ -320,9 +445,10 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
           </thead>
           <tbody>
             {employees.map((emp, userIndex) => {
-              const yearTotal = vacationCountMarkedDaysForUser(marks, emp.id, year)
+              const st = userStats.get(emp.id)
+              const yearTotal = st?.year ?? 0
               return (
-                <tr key={emp.id}>
+                <tr key={emp.id} className="vac-cont__body-row">
                   <td className="vac-cont__sticky-num">{userIndex + 1}</td>
                   <td className="vac-cont__sticky-name vac-cont__name-cell">{emp.label}</td>
                   {dayColsByMonth.map((cols, monthIndex) => (
@@ -330,31 +456,23 @@ export function VacationContinuousTable({ year, employees }: VacationContinuousT
                       {cols.map((col) => {
                         const key = vacationCellKey(emp.id, year, col.monthIndex, col.day)
                         const kind = marks[key]
-                        const bg = kind ? VACATION_KIND_COLORS[kind] : undefined
-                        const isSel = selected.has(key)
-                        const wknd = vacationDayIsWeekendRu(year, col.monthIndex, col.day)
-                        const monthStart = col.day === 1 && col.monthIndex > 0
+                        const meta = dayMeta[col.colIndex]!
                         return (
-                          <td
+                          <VacationDayCell
                             key={key}
-                            role="gridcell"
-                            aria-selected={isSel}
-                            className={[
-                              'vac-cont__cell',
-                              wknd && !kind && 'vac-cont__cell--weekend',
-                              monthStart && 'vac-cont__cell--month-start',
-                              isSel && 'vac-cont__cell--selected',
-                            ]
-                              .filter(Boolean)
-                              .join(' ')}
-                            style={bg ? ({ backgroundColor: bg } as CSSProperties) : undefined}
-                            onMouseDown={(e) => handleCellMouseDown(e, emp.id, col.colIndex)}
-                            onMouseEnter={() => handleCellMouseEnter(emp.id, col.colIndex)}
+                            userId={emp.id}
+                            colIndex={col.colIndex}
+                            kind={kind}
+                            isSelected={selected.has(key)}
+                            isWeekendEmpty={meta.wknd && !kind}
+                            isMonthStart={meta.monthStart}
+                            onCellMouseDown={handleCellMouseDown}
+                            onCellMouseEnter={handleCellMouseEnter}
                           />
                         )
                       })}
                       <td className="vac-cont__sum-month" title={`Отмечено дней в ${VACATION_MONTH_NAMES[monthIndex]}`}>
-                        {vacationCountMarkedDaysForUserInMonth(marks, emp.id, year, monthIndex)}
+                        {st?.months[monthIndex] ?? 0}
                       </td>
                     </Fragment>
                   ))}

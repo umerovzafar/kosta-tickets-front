@@ -16,6 +16,19 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react-dom/')) return 'react-vendor'
+            if (id.includes('node_modules/react/')) return 'react-vendor'
+            if (id.includes('node_modules/react-router')) return 'router'
+            if (id.includes('node_modules/recharts')) return 'recharts'
+            if (id.includes('node_modules/exceljs')) return 'exceljs'
+          },
+        },
+      },
+    },
     define: {
       global: 'globalThis',
     },

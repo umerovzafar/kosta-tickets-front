@@ -143,6 +143,17 @@
   box-sizing: border-box;
 }
 
+/* Шапка целиком выше строк тела — при скролле не просвечивают номера/ячейки под № и ФИО */
+.vac-cont__table thead {
+  position: relative;
+  z-index: 40;
+}
+
+.vac-cont__table tbody {
+  position: relative;
+  z-index: 0;
+}
+
 .vac-cont__table {
   --vac-num-w: 2.5rem;
   --vac-name-w: 12rem;
@@ -155,13 +166,16 @@
   --vac-border-strong: #cbd5e1;
   --vac-weekend-bg: #f1f5f9;
   --vac-weekend-cell: #f8fafc;
+  /* Перекрытие шва № / ФИО (border-collapse + sticky дают субпиксельную щель) */
+  --vac-sticky-overlap: 5px;
 }
 
+/* Белая «заплатка» слева (box-shadow) закрывает субпиксельные щели при горизонтальном скролле */
 .vac-cont__sticky-corner {
   position: sticky;
   left: 0;
   top: 0;
-  z-index: 14;
+  z-index: 15;
   width: calc(var(--vac-num-w) + var(--vac-name-w));
   min-width: calc(var(--vac-num-w) + var(--vac-name-w));
   height: var(--vac-h1);
@@ -171,8 +185,11 @@
   vertical-align: middle;
   line-height: var(--vac-h1);
   border: 1px solid var(--vac-border);
-  background: #fff;
-  box-shadow: 3px 0 12px -4px rgba(15, 23, 42, 0.06);
+  background-color: #fff;
+  background-clip: padding-box;
+  box-shadow:
+    -14px 0 0 0 #fff,
+    4px 0 14px -6px rgba(15, 23, 42, 0.07);
 }
 
 .vac-cont__month-title {
@@ -214,7 +231,7 @@
   position: sticky;
   right: 0;
   top: 0;
-  z-index: 16;
+  z-index: 18;
   width: var(--vac-year-sum-w);
   min-width: var(--vac-year-sum-w);
   padding: 0.35rem 0.15rem;
@@ -247,31 +264,40 @@
   position: sticky;
   left: 0;
   top: var(--vac-h1);
-  z-index: 12;
+  z-index: 13;
   width: var(--vac-num-w);
   min-width: var(--vac-num-w);
   text-align: center;
   font-weight: 700;
   vertical-align: middle;
   border: 1px solid var(--vac-border);
-  background: #fff;
-  box-shadow: 3px 0 12px -4px rgba(15, 23, 42, 0.06);
+  background-color: #fff;
+  background-clip: padding-box;
+  /* Справа белая полоса закрывает щель до ФИО */
+  box-shadow:
+    -14px 0 0 0 #fff,
+    8px 0 0 0 #fff,
+    4px 0 14px -6px rgba(15, 23, 42, 0.07);
 }
 
 .vac-cont__sticky-name {
   position: sticky;
-  left: var(--vac-num-w);
+  /* Сдвиг влево на overlap: ФИО накрывает шов, под ним не видно прокручиваемую сетку */
+  left: calc(var(--vac-num-w) - var(--vac-sticky-overlap));
   top: var(--vac-h1);
-  z-index: 12;
+  z-index: 14;
   width: var(--vac-name-w);
   min-width: var(--vac-name-w);
   text-align: left;
   font-weight: 700;
   vertical-align: middle;
-  padding: 0.3rem 0.45rem;
+  padding: 0.3rem 0.45rem 0.3rem calc(0.45rem + var(--vac-sticky-overlap));
   border: 1px solid var(--vac-border);
-  background: #fff;
-  box-shadow: 3px 0 12px -4px rgba(15, 23, 42, 0.06);
+  background-color: #fff;
+  background-clip: padding-box;
+  box-shadow:
+    -12px 0 0 0 #fff,
+    4px 0 14px -6px rgba(15, 23, 42, 0.07);
 }
 
 .vac-cont__th-day {
@@ -338,21 +364,31 @@
 .vac-cont tbody .vac-cont__sticky-num,
 .vac-cont tbody .vac-cont__sticky-name {
   top: auto;
-  background: #fff;
+  background-color: #fff;
+  background-clip: padding-box;
 }
 
 .vac-cont tbody .vac-cont__sticky-num {
-  z-index: 10;
+  z-index: 11;
   height: 1.65rem;
   line-height: 1.65rem;
   padding: 0;
   text-align: center;
   vertical-align: middle;
+  box-shadow:
+    -14px 0 0 0 #fff,
+    8px 0 0 0 #fff,
+    4px 0 14px -6px rgba(15, 23, 42, 0.06);
 }
 
 .vac-cont tbody .vac-cont__sticky-name {
-  z-index: 10;
+  z-index: 12;
+  left: calc(var(--vac-num-w) - var(--vac-sticky-overlap));
   vertical-align: middle;
+  padding-left: calc(0.45rem + var(--vac-sticky-overlap));
+  box-shadow:
+    -12px 0 0 0 #fff,
+    4px 0 14px -6px rgba(15, 23, 42, 0.06);
 }
 
 .vac-cont tbody tr:hover .vac-cont__cell:not(.vac-cont__cell--selected) {
