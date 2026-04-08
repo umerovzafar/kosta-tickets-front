@@ -25,17 +25,20 @@ export function AdminUsersSection() {
     setOpenRoleDropdown,
     roleMenuPos,
     setRoleMenuPos,
-    roleDropdownRef,
+    roleTriggerRef,
+    roleMenuRef,
     openTTDropdown,
     setOpenTTDropdown,
     ttMenuPos,
     setTTMenuPos,
-    ttDropdownRef,
+    ttTriggerRef,
+    ttMenuRef,
     openPosDropdown,
     setOpenPosDropdown,
     posMenuPos,
     setPosMenuPos,
-    posDropdownRef,
+    posTriggerRef,
+    posMenuRef,
     ROLE_META,
     TT_ROLE_OPTIONS,
     TT_POSITIONS,
@@ -97,17 +100,20 @@ export function AdminUsersSection() {
             setOpenRoleDropdown={setOpenRoleDropdown}
             roleMenuPos={roleMenuPos}
             setRoleMenuPos={setRoleMenuPos}
-            roleDropdownRef={roleDropdownRef}
+            roleTriggerRef={roleTriggerRef}
+            roleMenuRef={roleMenuRef}
             openTTDropdown={openTTDropdown}
             setOpenTTDropdown={setOpenTTDropdown}
             ttMenuPos={ttMenuPos}
             setTTMenuPos={setTTMenuPos}
-            ttDropdownRef={ttDropdownRef}
+            ttTriggerRef={ttTriggerRef}
+            ttMenuRef={ttMenuRef}
             openPosDropdown={openPosDropdown}
             setOpenPosDropdown={setOpenPosDropdown}
             posMenuPos={posMenuPos}
             setPosMenuPos={setPosMenuPos}
-            posDropdownRef={posDropdownRef}
+            posTriggerRef={posTriggerRef}
+            posMenuRef={posMenuRef}
             onRoleChange={handleRoleChange}
             onTTRoleChange={handleTTRoleChange}
             onPositionChange={handlePositionChange}

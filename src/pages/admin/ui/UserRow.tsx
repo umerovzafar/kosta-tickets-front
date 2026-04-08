@@ -10,17 +10,20 @@ type UserRowProps = {
   setOpenRoleDropdown: (v: number | null) => void
   roleMenuPos: { top: number; left: number; width: number } | null
   setRoleMenuPos: (v: { top: number; left: number; width: number } | null) => void
-  roleDropdownRef: React.RefObject<HTMLDivElement | null>
+  roleTriggerRef: React.RefObject<HTMLButtonElement | null>
+  roleMenuRef: React.RefObject<HTMLDivElement | null>
   openTTDropdown: number | null
   setOpenTTDropdown: (v: number | null) => void
   ttMenuPos: { top: number; left: number; width: number } | null
   setTTMenuPos: (v: { top: number; left: number; width: number } | null) => void
-  ttDropdownRef: React.RefObject<HTMLDivElement | null>
+  ttTriggerRef: React.RefObject<HTMLButtonElement | null>
+  ttMenuRef: React.RefObject<HTMLDivElement | null>
   openPosDropdown: number | null
   setOpenPosDropdown: (v: number | null) => void
   posMenuPos: { top: number; left: number; width: number } | null
   setPosMenuPos: (v: { top: number; left: number; width: number } | null) => void
-  posDropdownRef: React.RefObject<HTMLDivElement | null>
+  posTriggerRef: React.RefObject<HTMLButtonElement | null>
+  posMenuRef: React.RefObject<HTMLDivElement | null>
   onRoleChange: (u: User, role: string) => void
   onTTRoleChange: (u: User, ttRole: 'user' | 'manager' | null) => void
   onPositionChange: (u: User, pos: TTPosition | null) => void
@@ -40,17 +43,20 @@ export function UserRow({
   setOpenRoleDropdown,
   roleMenuPos,
   setRoleMenuPos,
-  roleDropdownRef,
+  roleTriggerRef,
+  roleMenuRef,
   openTTDropdown,
   setOpenTTDropdown,
   ttMenuPos,
   setTTMenuPos,
-  ttDropdownRef,
+  ttTriggerRef,
+  ttMenuRef,
   openPosDropdown,
   setOpenPosDropdown,
   posMenuPos,
   setPosMenuPos,
-  posDropdownRef,
+  posTriggerRef,
+  posMenuRef,
   onRoleChange,
   onTTRoleChange,
   onPositionChange,
@@ -79,13 +85,14 @@ export function UserRow({
       </td>
       <td className="ap__td-email">{u.email}</td>
       <td>
-        <div className="ap__role-dd" ref={openRoleDropdown === u.id ? roleDropdownRef : undefined}>
+        <div className="ap__role-dd">
           <button
             type="button"
             className={`ap__role-trigger${openRoleDropdown === u.id ? ' ap__role-trigger--open' : ''}${isSaving ? ' ap__role-trigger--disabled' : ''}`}
             disabled={isSaving}
             aria-haspopup="listbox"
             aria-expanded={openRoleDropdown === u.id}
+            ref={openRoleDropdown === u.id ? roleTriggerRef : undefined}
             onClick={(e) => {
               if (isSaving) return
               if (openRoleDropdown === u.id) {
@@ -103,7 +110,7 @@ export function UserRow({
             <svg className="ap__role-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {openRoleDropdown === u.id && roleMenuPos && createPortal(
-            <div className="ap__role-menu" role="listbox" style={{ position: 'fixed', top: roleMenuPos.top, left: roleMenuPos.left, minWidth: Math.max(roleMenuPos.width, 180) }} ref={roleDropdownRef}>
+            <div className="ap__role-menu" role="listbox" style={{ position: 'fixed', top: roleMenuPos.top, left: roleMenuPos.left, minWidth: Math.max(roleMenuPos.width, 180) }} ref={roleMenuRef}>
             {KNOWN_ROLES.map((r) => {
               const meta = ROLE_META[r as KnownRole]
               const isActive = u.role === r
@@ -129,13 +136,14 @@ export function UserRow({
         </div>
       </td>
       <td>
-        <div className="ap__role-dd" ref={openTTDropdown === u.id ? ttDropdownRef : undefined}>
+        <div className="ap__role-dd">
           <button
             type="button"
             className={`ap__role-trigger${openTTDropdown === u.id ? ' ap__role-trigger--open' : ''}${isSaving ? ' ap__role-trigger--disabled' : ''}`}
             disabled={isSaving}
             aria-haspopup="listbox"
             aria-expanded={openTTDropdown === u.id}
+            ref={openTTDropdown === u.id ? ttTriggerRef : undefined}
             onClick={(e) => {
               if (isSaving) return
               if (openTTDropdown === u.id) {
@@ -153,7 +161,7 @@ export function UserRow({
             <svg className="ap__role-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {openTTDropdown === u.id && ttMenuPos && createPortal(
-            <div className="ap__role-menu" role="listbox" style={{ position: 'fixed', top: ttMenuPos.top, left: ttMenuPos.left, minWidth: Math.max(ttMenuPos.width, 180) }} ref={ttDropdownRef}>
+            <div className="ap__role-menu" role="listbox" style={{ position: 'fixed', top: ttMenuPos.top, left: ttMenuPos.left, minWidth: Math.max(ttMenuPos.width, 180) }} ref={ttMenuRef}>
             {TT_ROLE_OPTIONS.map((opt) => {
               const isActive = u.time_tracking_role === opt.value
               return (
@@ -178,12 +186,13 @@ export function UserRow({
         </div>
       </td>
       <td>
-        <div className="ap__role-dd" ref={openPosDropdown === u.id ? posDropdownRef : undefined}>
+        <div className="ap__role-dd">
           <button
             type="button"
             className={`ap__role-trigger${openPosDropdown === u.id ? ' ap__role-trigger--open' : ''}${isSaving ? ' ap__role-trigger--disabled' : ''}`}
             aria-haspopup="listbox"
             aria-expanded={openPosDropdown === u.id}
+            ref={openPosDropdown === u.id ? posTriggerRef : undefined}
             onClick={(e) => {
               if (openPosDropdown === u.id) {
                 setOpenPosDropdown(null)
@@ -200,7 +209,7 @@ export function UserRow({
             <svg className="ap__role-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {openPosDropdown === u.id && posMenuPos && createPortal(
-            <div className="ap__role-menu" role="listbox" style={{ position: 'fixed', top: posMenuPos.top, left: posMenuPos.left, minWidth: Math.max(posMenuPos.width, 200) }} ref={posDropdownRef}>
+            <div className="ap__role-menu" role="listbox" style={{ position: 'fixed', top: posMenuPos.top, left: posMenuPos.left, minWidth: Math.max(posMenuPos.width, 200) }} ref={posMenuRef}>
             <button
               type="button"
               role="option"

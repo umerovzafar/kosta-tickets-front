@@ -37,17 +37,20 @@ export type AdminContextValue = {
   setOpenRoleDropdown: (v: number | null) => void
   roleMenuPos: { top: number; left: number; width: number } | null
   setRoleMenuPos: (v: { top: number; left: number; width: number } | null) => void
-  roleDropdownRef: RefObject<HTMLDivElement | null>
+  roleTriggerRef: RefObject<HTMLButtonElement | null>
+  roleMenuRef: RefObject<HTMLDivElement | null>
   openTTDropdown: number | null
   setOpenTTDropdown: (v: number | null) => void
   ttMenuPos: { top: number; left: number; width: number } | null
   setTTMenuPos: (v: { top: number; left: number; width: number } | null) => void
-  ttDropdownRef: RefObject<HTMLDivElement | null>
+  ttTriggerRef: RefObject<HTMLButtonElement | null>
+  ttMenuRef: RefObject<HTMLDivElement | null>
   openPosDropdown: number | null
   setOpenPosDropdown: (v: number | null) => void
   posMenuPos: { top: number; left: number; width: number } | null
   setPosMenuPos: (v: { top: number; left: number; width: number } | null) => void
-  posDropdownRef: RefObject<HTMLDivElement | null>
+  posTriggerRef: RefObject<HTMLButtonElement | null>
+  posMenuRef: RefObject<HTMLDivElement | null>
 
   tickets: Ticket[]
   ticketsLoading: boolean
