@@ -9,6 +9,7 @@ type TimeUserRowProps = {
   onActionsToggle: (id: string) => void
   onActionsClose: () => void
   actionsMenuRef: React.RefObject<HTMLDivElement | null>
+  onOpenProjectAccess?: (user: TimeUserRowType) => void
 }
 
 export function TimeUserRow({
@@ -18,6 +19,7 @@ export function TimeUserRow({
   onActionsToggle,
   onActionsClose,
   actionsMenuRef,
+  onOpenProjectAccess,
 }: TimeUserRowProps) {
   const billablePct = user.hours > 0 ? (user.billableHours / user.hours) * 100 : 0
   const rowTitle = user.hours > 0
@@ -83,6 +85,19 @@ export function TimeUserRow({
             >
               Редактировать
             </AnimatedLink>
+            {onOpenProjectAccess && (
+              <button
+                type="button"
+                className="time-users__actions-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  onOpenProjectAccess(user)
+                  onActionsClose()
+                }}
+              >
+                Доступ к проектам
+              </button>
+            )}
             <button type="button" className="time-users__actions-menu-item" role="menuitem" onClick={onActionsClose}>
               Закрепить
             </button>

@@ -7,9 +7,16 @@ type TimeUsersTableProps = {
   openActionsId: string | null
   onActionsOpen: (id: string) => void
   onActionsClose: () => void
+  onOpenProjectAccess?: (user: TimeUserRow) => void
 }
 
-export function TimeUsersTable({ users, openActionsId, onActionsOpen, onActionsClose }: TimeUsersTableProps) {
+export function TimeUsersTable({
+  users,
+  openActionsId,
+  onActionsOpen,
+  onActionsClose,
+  onOpenProjectAccess,
+}: TimeUsersTableProps) {
   const actionsMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -54,6 +61,7 @@ export function TimeUsersTable({ users, openActionsId, onActionsOpen, onActionsC
             onActionsToggle={onActionsOpen}
             onActionsClose={onActionsClose}
             actionsMenuRef={actionsMenuRef}
+            onOpenProjectAccess={onOpenProjectAccess}
           />
         ))}
       </div>

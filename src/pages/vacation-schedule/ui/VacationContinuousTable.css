@@ -213,6 +213,10 @@
 }
 
 .vac-cont__month-sum-head {
+  /* Как у .vac-cont__month-title / «Всего»: при вертикальном скролле шапка не уезжает (rowSpan=3). Без right — колонка остаётся после дней месяца. */
+  position: sticky;
+  top: 0;
+  z-index: 17;
   width: var(--vac-month-sum-w);
   min-width: var(--vac-month-sum-w);
   max-width: var(--vac-month-sum-w);
@@ -222,6 +226,7 @@
   border: 1px solid var(--vac-border);
   border-left: 1px solid var(--vac-border-strong);
   background: #fff;
+  background-clip: padding-box;
   font-size: 0.5625rem;
   font-weight: 600;
   color: var(--app-muted, #64748b);
@@ -231,7 +236,7 @@
   position: sticky;
   right: 0;
   top: 0;
-  z-index: 18;
+  z-index: 19;
   width: var(--vac-year-sum-w);
   min-width: var(--vac-year-sum-w);
   padding: 0.35rem 0.15rem;
@@ -361,6 +366,31 @@
   text-align: left;
 }
 
+.vac-cont__name-btn {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--app-link, #2563eb);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(37, 99, 235, 0.35);
+}
+
+.vac-cont__name-btn:hover {
+  text-decoration-color: rgba(37, 99, 235, 0.8);
+}
+
+.vac-cont__empty-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--app-muted, #64748b);
+}
+
 .vac-cont tbody .vac-cont__sticky-num,
 .vac-cont tbody .vac-cont__sticky-name {
   top: auto;
@@ -423,6 +453,23 @@
   z-index: 1;
 }
 
+.vac-cont__cell--editable {
+  position: relative;
+}
+
+.vac-cont__cell-btn {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
 .vac-cont__cell--selected {
   box-shadow: inset 0 0 0 2px var(--app-accent, #4f46e5);
   z-index: 2;
@@ -446,9 +493,6 @@
 }
 
 .vac-cont__sum-year {
-  position: sticky;
-  right: 0;
-  z-index: 9;
   width: var(--vac-year-sum-w);
   min-width: var(--vac-year-sum-w);
   height: 1.65rem;
@@ -461,7 +505,6 @@
   border-left: 1px solid var(--vac-border-strong);
   background: #fafafa;
   color: var(--app-text, #475569);
-  box-shadow: -3px 0 12px -4px rgba(15, 23, 42, 0.06);
   vertical-align: middle;
 }
 

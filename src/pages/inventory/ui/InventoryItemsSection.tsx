@@ -36,6 +36,15 @@ export function InventoryItemsSection() {
     handleArchive,
   } = useInventory()
 
+  const showPager = skip > 0 || items.length >= LIMIT
+  const canGoNext = items.length >= LIMIT
+  const rangeLabel =
+    items.length === 0
+      ? skip > 0
+        ? 'На странице нет записей'
+        : ''
+      : `${skip + 1}–${skip + items.length}`
+
   return (
     <section className="inv__card">
       <div className="inv__card-head">
@@ -132,6 +141,7 @@ export function InventoryItemsSection() {
                 <th>Название</th>
                 <th>Категория</th>
                 <th>Инв. номер</th>
+                <th>Серийный номер</th>
                 <th>Статус</th>
                 <th>Закреплено за</th>
                 <th>Покупка</th>
@@ -149,6 +159,9 @@ export function InventoryItemsSection() {
                     <span className="inv__skel" />
                   </td>
                   <td data-label="Инв. номер">
+                    <span className="inv__skel" />
+                  </td>
+                  <td data-label="Серийный номер">
                     <span className="inv__skel" />
                   </td>
                   <td data-label="Статус">
@@ -173,7 +186,7 @@ export function InventoryItemsSection() {
             </tbody>
           </table>
         </div>
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && skip === 0 ? (
         <div className="inv__empty">
           <p>Нет позиций</p>
           {canCreateItems && (
@@ -189,6 +202,10 @@ export function InventoryItemsSection() {
             </button>
           )}
         </div>
+      ) : items.length === 0 && skip > 0 ? (
+        <div className="inv__empty">
+          <p>Дальше записей нет — вернитесь назад.</p>
+        </div>
       ) : (
         <div className="inv__table-wrap">
           <table className="inv__table">
@@ -197,6 +214,7 @@ export function InventoryItemsSection() {
                 <th>Название</th>
                 <th>Категория</th>
                 <th>Инв. номер</th>
+                <th>Серийный номер</th>
                 <th>Статус</th>
                 <th>Закреплено за</th>
                 <th>Покупка</th>
@@ -225,6 +243,9 @@ export function InventoryItemsSection() {
                     </td>
                     <td data-label="Категория">{cat?.name ?? '—'}</td>
                     <td className="inv__td-mono" data-label="Инв. номер">{item.inventory_number}</td>
+                    <td className="inv__td-mono" data-label="Серийный номер">
+                      {item.serial_number?.trim() ? item.serial_number.trim() : '—'}
+                    </td>
                     <td data-label="Статус">
                       <span className={`inv__status inv__status--${item.status}`}>{statusLabel(item.status)}</span>
                     </td>
@@ -279,7 +300,7 @@ export function InventoryItemsSection() {
         </div>
       )}
 
-      {items.length >= LIMIT && (
+      {showPager && (
         <div className="inv__pager">
           <button
             type="button"
@@ -289,8 +310,13 @@ export function InventoryItemsSection() {
           >
             Назад
           </button>
-          <span className="inv__pager-info">Показано {items.length}</span>
-          <button type="button" className="inv__btn inv__btn--ghost" onClick={() => setSkip((s) => s + LIMIT)}>
+          <span className="inv__pager-info">{rangeLabel || `Показано ${items.length}`}</span>
+          <button
+            type="button"
+            className="inv__btn inv__btn--ghost"
+            disabled={!canGoNext}
+            onClick={() => setSkip((s) => s + LIMIT)}
+          >
             Далее
           </button>
         </div>

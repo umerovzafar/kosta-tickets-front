@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getUsers } from '@entities/user'
 import { listTimeTrackingUsers } from '@entities/time-tracking'
+import { useCurrentUser } from '@shared/hooks'
 import type { TimeUserRow, TimeUsersTotals } from '../model/types'
 import type { TimeTrackingRole } from '../model/constants'
+import { canManageUserProjectAccess } from '../model/timeManagerClientsAccess'
 import { TimeUsersSummary } from './TimeUsersSummary'
 import { TimeUsersTable } from './TimeUsersTable'
 import { TimeUsersSkeleton } from './TimeUsersSkeleton'
+import { TimeUserProjectAccessModal } from './TimeUserProjectAccessModal'
 
 function getInitials(name: string | null): string {
   if (!name) return '?'
@@ -15,10 +18,17 @@ function getInitials(name: string | null): string {
 }
 
 export function TimeUsersPanel() {
+  const { user: currentUser } = useCurrentUser()
   const [users, setUsers] = useState<TimeUserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openActionsId, setOpenActionsId] = useState<string | null>(null)
+  const [projectAccessUser, setProjectAccessUser] = useState<TimeUserRow | null>(null)
+
+  const canSaveProjectAccess = canManageUserProjectAccess(
+    currentUser?.role,
+    currentUser?.time_tracking_role ?? null,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -108,6 +118,16 @@ export function TimeUsersPanel() {
           openActionsId={openActionsId}
           onActionsOpen={handleActionsOpen}
           onActionsClose={handleActionsClose}
+          onOpenProjectAccess={(u) => setProjectAccessUser(u)}
+        />
+      )}
+
+      {projectAccessUser && (
+        <TimeUserProjectAccessModal
+          authUserId={Number(projectAccessUser.id)}
+          userLabel={projectAccessUser.name}
+          canSave={canSaveProjectAccess}
+          onClose={() => setProjectAccessUser(null)}
         />
       )}
     </div>

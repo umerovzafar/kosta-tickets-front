@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   listTimeManagerClients,
   listClientProjects,
@@ -23,6 +23,34 @@ function formatDateShort(iso: string | null | undefined): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—'
   const [y, m, d] = s.split('-')
   return `${d}.${m}.${y}`
+}
+
+function formatProjectPeriod(start: string | null | undefined, end: string | null | undefined): string {
+  const s = formatDateShort(start)
+  const e = formatDateShort(end)
+  if (s === '—' && e === '—') return 'Сроки не заданы'
+  if (e === '—') return `Старт ${s} · окончание не указано`
+  if (s === '—') return `До ${e}`
+  return `${s} — ${e}`
+}
+
+function sortProjectsForView(
+  rows: TimeManagerClientProjectRow[],
+  singleClientId: string,
+  clientRows: TimeManagerClientRow[],
+): TimeManagerClientProjectRow[] {
+  const nameById = new Map(clientRows.map((c) => [c.id, c.name]))
+  const next = [...rows]
+  next.sort((a, b) => {
+    if (!singleClientId && clientRows.length > 0) {
+      const ca = nameById.get(a.client_id) ?? ''
+      const cb = nameById.get(b.client_id) ?? ''
+      const cmp = ca.localeCompare(cb, 'ru', { sensitivity: 'base' })
+      if (cmp !== 0) return cmp
+    }
+    return a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' })
+  })
+  return next
 }
 
 export function TimeTrackingClientProjectsPanel() {
@@ -50,8 +78,9 @@ export function TimeTrackingClientProjectsPanel() {
       rows.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }))
       setClients(rows)
       setClientId((prev) => {
+        if (prev === '') return ''
         if (prev && rows.some((c) => c.id === prev)) return prev
-        return rows[0]?.id ?? ''
+        return ''
       })
     } catch (e) {
       setClients([])
@@ -66,16 +95,29 @@ export function TimeTrackingClientProjectsPanel() {
   }, [loadClients])
 
   const loadProjects = useCallback(async (cid: string) => {
-    if (!cid) {
-      setProjects([])
-      return
-    }
     setProjectsLoading(true)
     setProjectsError(null)
     try {
+      if (!cid) {
+        const allClients = await listTimeManagerClients()
+        if (allClients.length === 0) {
+          setProjects([])
+          return
+        }
+        const chunks = await Promise.all(
+          allClients.map((c) =>
+            listClientProjects(c.id).catch((err) => {
+              if (isForbiddenError(err)) throw err
+              return [] as TimeManagerClientProjectRow[]
+            }),
+          ),
+        )
+        const rows = chunks.flat()
+        setProjects(sortProjectsForView(rows, '', allClients))
+        return
+      }
       const rows = await listClientProjects(cid)
-      rows.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }))
-      setProjects(rows)
+      setProjects(sortProjectsForView(rows, cid, []))
     } catch (e) {
       if (isForbiddenError(e)) {
         setProjectsError('Недостаточно прав для просмотра проектов.')
@@ -95,14 +137,12 @@ export function TimeTrackingClientProjectsPanel() {
   const onProjectSaved = (row: TimeManagerClientProjectRow) => {
     setProjects((prev) => {
       const idx = prev.findIndex((x) => x.id === row.id)
-      if (idx < 0) {
-        const next = [...prev, row]
-        next.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }))
-        return next
-      }
-      const next = [...prev]
-      next[idx] = row
-      return next
+      const next = idx < 0 ? [...prev, row] : (() => {
+        const copy = [...prev]
+        copy[idx] = row
+        return copy
+      })()
+      return sortProjectsForView(next, clientId, clientId ? [] : clients)
     })
   }
 
@@ -113,7 +153,7 @@ export function TimeTrackingClientProjectsPanel() {
     }
     if (!window.confirm(`Удалить проект «${p.name}»?`)) return
     try {
-      await deleteClientProject(clientId, p.id)
+      await deleteClientProject(p.client_id, p.id)
       setProjects((prev) => prev.filter((x) => x.id !== p.id))
     } catch (e) {
       window.alert(e instanceof Error ? e.message : 'Не удалось удалить')
@@ -121,6 +161,7 @@ export function TimeTrackingClientProjectsPanel() {
   }
 
   const selectedClient = clients.find((c) => c.id === clientId)
+  const clientNameById = useMemo(() => new Map(clients.map((c) => [c.id, c.name])), [clients])
 
   return (
     <div className="tt-settings__content tt-tasks-page tt-projects-settings">
@@ -147,19 +188,30 @@ export function TimeTrackingClientProjectsPanel() {
             {clients.length === 0 && !clientsLoading ? (
               <option value="">Нет клиентов</option>
             ) : (
-              clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))
+              <>
+                <option value="">Все клиенты</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </>
             )}
           </select>
         </div>
         <button
           type="button"
           className="tt-settings__btn tt-settings__btn--primary tt-projects-page__toolbar-cta"
-          disabled={!canManage || !clientId}
-          title={!canManage ? 'Доступно главному администратору, администратору и партнёру' : undefined}
+          disabled={!canManage || clients.length === 0}
+          title={
+            !canManage
+              ? 'Доступно главному администратору, администратору и партнёру'
+              : clients.length === 0
+                ? 'Сначала добавьте клиента'
+                : !clientId
+                  ? 'Выберите клиента в модальном окне'
+                  : undefined
+          }
           onClick={() => setModal({ mode: 'create', row: null })}
         >
           + Новый проект
@@ -181,9 +233,18 @@ export function TimeTrackingClientProjectsPanel() {
         </p>
       )}
 
-      {!projectsError && selectedClient && (
+      {!projectsError && clients.length > 0 && (
         <h2 className="tt-tasks-page__list-heading">
-          Проекты <span className="tt-tasks-page__list-heading-client">{selectedClient.name}</span>
+          {clientId ? (
+            <>
+              Проекты{' '}
+              <span className="tt-tasks-page__list-heading-client">{selectedClient?.name ?? '—'}</span>
+            </>
+          ) : (
+            <>
+              Проекты <span className="tt-tasks-page__list-heading-client">всех клиентов</span>
+            </>
+          )}
         </h2>
       )}
 
@@ -194,25 +255,40 @@ export function TimeTrackingClientProjectsPanel() {
               Загрузка проектов…
             </div>
           )}
-          {!projectsLoading && clientId && projects.length === 0 && (
+          {!projectsLoading && projects.length === 0 && clients.length > 0 && (
             <div className="tt-settings__rates-empty tt-settings__list-empty-inner tt-tasks-page__empty">
-              Для этого клиента пока нет проектов. Нажмите «Новый проект».
+              {clientId
+                ? 'Для этого клиента пока нет проектов. Нажмите «Новый проект».'
+                : 'Нет ни одного проекта ни у одного клиента. Нажмите «Новый проект».'}
             </div>
           )}
           {!projectsLoading &&
             projects.map((p) => (
               <div key={p.id} className="tt-settings__list-row tt-task-card tt-project-card">
                 <div className="tt-task-card__body">
-                  <h3 className="tt-task-card__title">
-                    {p.name}
-                    {p.code ? <span className="tt-project-card__code">{p.code}</span> : null}
-                  </h3>
-                  <p className="tt-task-card__rate tt-project-card__meta">
-                    {PROJECT_TYPE_LABEL[p.project_type] ?? p.project_type}
-                    {' · '}
-                    {formatDateShort(p.start_date)} — {formatDateShort(p.end_date)}
-                    {p.usage_count > 0 ? ` · записей времени: ${p.usage_count}` : ''}
-                  </p>
+                  <div className="tt-project-card__head">
+                    <h3 className="tt-task-card__title tt-project-card__title-only">{p.name}</h3>
+                    {p.code ? (
+                      <span className="tt-project-card__code" title="Код проекта">
+                        <span className="tt-project-card__code-prefix">ID</span>
+                        <span className="tt-project-card__code-value">{p.code}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="tt-project-card__details">
+                    {!clientId ? (
+                      <span className="tt-task-pill tt-task-pill--muted" title="Клиент">
+                        {clientNameById.get(p.client_id) ?? '—'}
+                      </span>
+                    ) : null}
+                    <span className="tt-task-pill tt-task-pill--scope">
+                      {PROJECT_TYPE_LABEL[p.project_type] ?? p.project_type}
+                    </span>
+                    <span className="tt-project-card__period">{formatProjectPeriod(p.start_date, p.end_date)}</span>
+                    {p.usage_count > 0 ? (
+                      <span className="tt-project-card__usage">Записей времени: {p.usage_count}</span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="tt-task-card__actions">
                   <button
@@ -238,11 +314,12 @@ export function TimeTrackingClientProjectsPanel() {
         </div>
       )}
 
-      {modal && clientId && (
+      {modal && (modal.mode === 'edit' ? modal.row != null : clients.length > 0) && (
         <ClientProjectModal
           key={modal.mode === 'edit' && modal.row ? modal.row.id : 'create'}
           mode={modal.mode}
-          fixedClientId={clientId}
+          fixedClientId={modal.mode === 'create' && clientId ? clientId : null}
+          clientsForPicker={modal.mode === 'create' && !clientId ? clients : undefined}
           initial={modal.row}
           onClose={() => setModal(null)}
           onSaved={onProjectSaved}

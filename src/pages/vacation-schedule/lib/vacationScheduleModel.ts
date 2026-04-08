@@ -1,12 +1,14 @@
 import type { User } from '@entities/user'
+import type { VacationAbsenceDayApi, VacationKindLegendItemApi } from '@entities/vacation'
 
 export type VacationScheduleEmployeeRow = {
   id: number
   label: string
+  /** Номер строки из Excel (`№`), если есть в импорте */
+  excelRowNo?: number | null
+  /** Текст колонки «период» из файла */
+  plannedPeriodNote?: string | null
 }
-
-/** Роль, которую не показываем в графике отпусков */
-export const VACATION_MAIN_ADMIN_ROLE = 'Главный администратор' as const
 
 /** Типы отметок (порядок совпадает с легендой) */
 export const VACATION_ABSENCE_KINDS = ['annual', 'sick', 'dayoff', 'business', 'remote'] as const
@@ -28,6 +30,118 @@ export const VACATION_ABSENCE_LEGEND: ReadonlyArray<{
 export const VACATION_KIND_COLORS: Record<VacationAbsenceKind, string> = Object.fromEntries(
   VACATION_ABSENCE_LEGEND.map((x) => [x.kind, x.color]),
 ) as Record<VacationAbsenceKind, string>
+
+/** Значения поля `kind` из API vacation → ключи UI (см. FRONTEND_VACATION_SCHEDULE.md). */
+const API_KIND_TO_UI: Partial<Record<string, VacationAbsenceKind>> = {
+  annual_vacation: 'annual',
+  sick_leave: 'sick',
+  day_off: 'dayoff',
+  business_trip: 'business',
+  remote_work: 'remote',
+}
+
+export function apiAbsenceKindToUi(kind: string): VacationAbsenceKind | undefined {
+  return API_KIND_TO_UI[kind]
+}
+
+/** Если в ответе только kind_code 1…5 (или строка kind не совпала). */
+const KIND_CODE_TO_UI: Partial<Record<number, VacationAbsenceKind>> = {
+  1: 'annual',
+  2: 'sick',
+  3: 'dayoff',
+  4: 'business',
+  5: 'remote',
+}
+
+export function absenceKindToUi(kind: string | undefined, kindCode: number): VacationAbsenceKind | undefined {
+  const fromStr = kind ? apiAbsenceKindToUi(kind) : undefined
+  if (fromStr) return fromStr
+  return KIND_CODE_TO_UI[kindCode]
+}
+
+export function vacationKindHumanLabel(kind: VacationAbsenceKind): string {
+  const x = VACATION_ABSENCE_LEGEND.find((l) => l.kind === kind)
+  return x?.label ?? kind
+}
+
+/** Легенда: порядок как в GET kind-codes (по коду 1…5), цвета/подписи из UI. */
+export function vacationLegendForUi(
+  kindCodes: Record<string, string> | null | undefined,
+): ReadonlyArray<(typeof VACATION_ABSENCE_LEGEND)[number]> {
+  if (!kindCodes || Object.keys(kindCodes).length === 0) {
+    return VACATION_ABSENCE_LEGEND
+  }
+  const ordered = Object.keys(kindCodes)
+    .filter((k) => /^\d+$/.test(k))
+    .sort((a, b) => Number(a) - Number(b))
+    .map((code) => kindCodes[code])
+    .map((apiKind) => apiAbsenceKindToUi(apiKind))
+    .filter((k): k is VacationAbsenceKind => k != null)
+    .map((uiKind) => VACATION_ABSENCE_LEGEND.find((x) => x.kind === uiKind))
+    .filter((x): x is (typeof VACATION_ABSENCE_LEGEND)[number] => x != null)
+  return ordered.length > 0 ? ordered : VACATION_ABSENCE_LEGEND
+}
+
+/** Строка легенды для таблицы и форм (код вида + цвет с API). */
+export type VacationUiLegendItem = {
+  kind: VacationAbsenceKind
+  kindCode: number
+  label: string
+  color: string
+}
+
+export function vacationUiLegendFallback(): VacationUiLegendItem[] {
+  return VACATION_ABSENCE_LEGEND.map((x, i) => ({
+    kind: x.kind,
+    kindCode: i + 1,
+    label: x.label,
+    color: x.color,
+  }))
+}
+
+/** GET kind-legend → элементы UI (порядок по kind_code). */
+export function vacationUiLegendFromKindLegendApi(
+  items: VacationKindLegendItemApi[] | null | undefined,
+): VacationUiLegendItem[] {
+  if (!items?.length) return vacationUiLegendFallback()
+  const sorted = [...items].sort((a, b) => a.kind_code - b.kind_code)
+  const out: VacationUiLegendItem[] = []
+  for (const it of sorted) {
+    const kind = absenceKindToUi(it.kind, it.kind_code)
+    if (!kind) continue
+    const hex = it.color_hex?.trim()
+    const color =
+      hex && /^#[0-9a-fA-F]{3,8}$/.test(hex) ? hex : VACATION_KIND_COLORS[kind]
+    out.push({
+      kind,
+      kindCode: it.kind_code,
+      label: it.label_ru?.trim() || vacationKindHumanLabel(kind),
+      color,
+    })
+  }
+  return out.length > 0 ? out : vacationUiLegendFallback()
+}
+
+/** Fallback, если kind-legend недоступен: kind-codes + локальные цвета. */
+export function vacationUiLegendFromKindCodes(
+  kindCodes: Record<string, string> | null | undefined,
+): VacationUiLegendItem[] {
+  const rows = vacationLegendForUi(kindCodes)
+  const codeByKind = new Map<VacationAbsenceKind, number>()
+  if (kindCodes) {
+    for (const [code, apiKind] of Object.entries(kindCodes)) {
+      if (!/^\d+$/.test(code)) continue
+      const ui = apiAbsenceKindToUi(apiKind)
+      if (ui) codeByKind.set(ui, Number(code))
+    }
+  }
+  return rows.map((r, i) => ({
+    kind: r.kind,
+    kindCode: codeByKind.get(r.kind) ?? i + 1,
+    label: r.label,
+    color: r.color,
+  }))
+}
 
 export const VACATION_MONTH_NAMES = [
   'Январь',
@@ -55,10 +169,9 @@ function userSortLabel(u: User): string {
   return (u.display_name?.trim() || u.email || '').toLowerCase()
 }
 
-/** Сотрудники для графика: без главного администратора, по ФИО/email */
+/** Сотрудники для графика (локальный список пользователей): по ФИО/email */
 export function vacationScheduleEmployees(users: User[]): { id: number; label: string }[] {
   return users
-    .filter((u) => u.role !== VACATION_MAIN_ADMIN_ROLE)
     .sort((a, b) => userSortLabel(a).localeCompare(userSortLabel(b), 'ru'))
     .map((u) => ({ id: u.id, label: u.display_name?.trim() || u.email }))
 }
@@ -127,9 +240,85 @@ export function parseVacationCellKey(key: string): {
 }
 
 const MARKS_STORAGE_KEY = 'kl-vacation-marks-v1'
-const MARKS_VERSION = 1 as const
+const MARKS_VERSION = 2 as const
 
-export type VacationMarksState = Record<string, VacationAbsenceKind>
+/** Отметка в ячейке. `absenceDayId` — для PATCH/DELETE; если API не вернул id, ячейка только для просмотра. */
+export type VacationMarkCell = {
+  kind: VacationAbsenceKind
+  kindCode: number
+  absenceDayId?: number
+}
+
+export type VacationMarksState = Record<string, VacationMarkCell>
+
+function parseIsoDateParts(iso: string): { year: number; monthIndex: number; day: number } | null {
+  /** Допускаем `2026-01-15T00:00:00` и `2026-01-15Z` */
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso.trim())
+  if (!m) return null
+  const year = Number(m[1])
+  const month = Number(m[2])
+  const day = Number(m[3])
+  if (![year, month, day].every((n) => Number.isFinite(n))) return null
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year, monthIndex: month - 1, day }
+}
+
+/** Приводит элемент списка absence-days к ожидаемым полям (разные варианты имён в JSON). */
+export function coerceVacationAbsenceDayRow(raw: unknown): VacationAbsenceDayApi | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const employeeIdRaw = o.employee_id ?? o.employeeId ?? o.schedule_employee_id
+  const employee_id = Number(employeeIdRaw)
+  if (!Number.isFinite(employee_id)) return null
+  const absence_on =
+    typeof o.absence_on === 'string'
+      ? o.absence_on
+      : typeof o.date === 'string'
+        ? o.date
+        : ''
+  if (!absence_on) return null
+  const kind_code = Number(o.kind_code ?? o.kindCode)
+  if (!Number.isFinite(kind_code)) return null
+  const kind = typeof o.kind === 'string' ? o.kind : ''
+  const full_name = typeof o.full_name === 'string' ? o.full_name : ''
+  const idRaw = o.id
+  const id = idRaw != null && idRaw !== '' ? Number(idRaw) : undefined
+  const row: VacationAbsenceDayApi = {
+    employee_id,
+    full_name,
+    absence_on,
+    kind_code,
+    kind,
+  }
+  if (Number.isFinite(id)) row.id = id
+  return row
+}
+
+/** Плоский список дней от API → отметки для таблицы (только сотрудники из `employeeIds`). */
+export function vacationMarksFromAbsenceDays(
+  year: number,
+  days: VacationAbsenceDayApi[],
+  employeeIds: Set<number>,
+): VacationMarksState {
+  const out: VacationMarksState = {}
+  for (const d of days) {
+    if (!employeeIds.has(d.employee_id)) continue
+    const parsed = parseIsoDateParts(d.absence_on)
+    if (!parsed || parsed.year !== year) continue
+    const uiKind = absenceKindToUi(d.kind, d.kind_code)
+    if (!uiKind) continue
+    const key = vacationCellKey(d.employee_id, year, parsed.monthIndex, parsed.day)
+    const cell: VacationMarkCell = { kind: uiKind, kindCode: d.kind_code }
+    if (Number.isFinite(d.id)) cell.absenceDayId = d.id
+    out[key] = cell
+  }
+  return out
+}
+
+/** Дата ячейки в формате API `absence_on`. */
+export function vacationIsoDateFromParts(year: number, monthIndex: number, day: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
 
 export function loadVacationMarks(year: number): VacationMarksState {
   try {
@@ -138,16 +327,30 @@ export function loadVacationMarks(year: number): VacationMarksState {
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return {}
     const box = parsed as { version?: unknown; year?: unknown; marks?: unknown }
-    if (box.version !== MARKS_VERSION || box.year !== year) return {}
+    if (box.year !== year) return {}
     const marks = box.marks
     if (!marks || typeof marks !== 'object') return {}
     const out: VacationMarksState = {}
-    for (const [k, v] of Object.entries(marks as Record<string, unknown>)) {
-      if (typeof v === 'string' && (VACATION_ABSENCE_KINDS as readonly string[]).includes(v)) {
-        out[k] = v as VacationAbsenceKind
+    if (box.version === MARKS_VERSION) {
+      for (const [k, v] of Object.entries(marks as Record<string, unknown>)) {
+        if (!v || typeof v !== 'object') continue
+        const o = v as Record<string, unknown>
+        const kind = o.kind
+        const absenceDayId = o.absenceDayId
+        const kindCode = o.kindCode
+        if (
+          typeof kind === 'string' &&
+          (VACATION_ABSENCE_KINDS as readonly string[]).includes(kind) &&
+          typeof kindCode === 'number'
+        ) {
+          const cell: VacationMarkCell = { kind: kind as VacationAbsenceKind, kindCode }
+          if (typeof absenceDayId === 'number') cell.absenceDayId = absenceDayId
+          out[k] = cell
+        }
       }
+      return out
     }
-    return out
+    return {}
   } catch {
     return {}
   }
@@ -155,10 +358,7 @@ export function loadVacationMarks(year: number): VacationMarksState {
 
 export function saveVacationMarks(year: number, marks: VacationMarksState): void {
   try {
-    localStorage.setItem(
-      MARKS_STORAGE_KEY,
-      JSON.stringify({ version: MARKS_VERSION, year, marks }),
-    )
+    localStorage.setItem(MARKS_STORAGE_KEY, JSON.stringify({ version: MARKS_VERSION, year, marks }))
   } catch {
     /* quota */
   }
@@ -184,7 +384,7 @@ export function vacationCountMarkedDaysForUserInMonth(
   const nDays = vacationDaysInMonth(year, monthIndex)
   let n = 0
   for (let d = 1; d <= nDays; d += 1) {
-    if (marks[vacationCellKey(userId, year, monthIndex, d)]) n += 1
+    if (marks[vacationCellKey(userId, year, monthIndex, d)] != null) n += 1
   }
   return n
 }

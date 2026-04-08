@@ -50,12 +50,7 @@ const navItems: SidebarNavItem[] = [
   { to: routes.home, label: 'Главная', icon: IconHome },
   { to: routes.admin, label: 'Админ-панель', icon: IconGear },
   { to: routes.attendance, label: 'Посещаемость', icon: IconClock },
-  {
-    to: routes.vacationSchedule,
-    label: 'График отпусков',
-    icon: IconCalendarCheck,
-    adminOnly: true,
-  },
+  { to: routes.vacationSchedule, label: 'График отпусков', icon: IconCalendarCheck },
   { to: routes.inventory, label: 'Инвентаризация', icon: IconBox },
   { to: routes.timeTracking, label: 'Учёт времени', icon: IconStopwatch },
   { to: routes.todo, label: 'Список дел', icon: IconList },
@@ -104,6 +99,7 @@ export function Sidebar({
     visibleNavItems = navItems.filter(
       (item) =>
         item.label === 'Главная' ||
+        item.label === 'График отпусков' ||
         item.label === 'Учёт времени' ||
         item.label === 'Список дел' ||
         item.label === 'Расходы' ||

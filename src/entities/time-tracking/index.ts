@@ -32,6 +32,9 @@ export {
   createHourlyRate,
   patchHourlyRate,
   deleteHourlyRate,
+  getUserProjectAccess,
+  putUserProjectAccess,
+  listAllClientProjectsForPicker,
   isForbiddenError,
   type HourlyRateRow,
   type HourlyRateKind,
@@ -51,4 +54,5 @@ export {
   type TimeManagerClientProjectCodeHint,
   type TimeManagerClientProjectCreatePayload,
   type TimeManagerClientProjectPatchPayload,
+  type UserProjectAccessOut,
 } from './api'

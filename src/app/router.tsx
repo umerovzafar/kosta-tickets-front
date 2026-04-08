@@ -50,7 +50,7 @@ const router = createBrowserRouter([
   { path: routes.home, element: withProtected(<HomePage />) },
   { path: routes.ticketDetail, element: withProtected(<TicketDetailPage />) },
   { path: routes.attendance, element: withProtected(<AttendancePage />) },
-  { path: routes.vacationSchedule, element: withProtected(<VacationSchedulePage />, true) },
+  { path: routes.vacationSchedule, element: withProtected(<VacationSchedulePage />) },
   { path: routes.inventory, element: withProtected(<InventoryPage />) },
   { path: routes.timeTracking, element: withProtected(<TimeTrackingRoute />) },
   { path: routes.projectDetail, element: withProtected(<ProjectDetailPage />) },

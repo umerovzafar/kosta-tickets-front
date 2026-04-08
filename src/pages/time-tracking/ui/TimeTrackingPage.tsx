@@ -86,62 +86,68 @@ export function TimeTrackingPage() {
         {hasAccess && (
           <>
             <TimeTrackingTabBar tabs={visibleTabDefs} activeTab={activeTab} onTabChange={handleTabChange} />
-            <div
-              className="time-page__content"
-              role="tabpanel"
-              id="time-tab-users"
-              aria-labelledby="time-tab-btn-users"
-              hidden={activeTab !== 'users'}
-            >
-              <TimeUsersPanel />
-            </div>
-            <div
-              className="time-page__content"
-              role="tabpanel"
-              id="time-tab-projects"
-              aria-labelledby="time-tab-btn-projects"
-              hidden={activeTab !== 'projects'}
-            >
-              <ProjectsPanel />
-            </div>
-            <div
-              className="time-page__content"
-              role="tabpanel"
-              id="time-tab-expenses"
-              aria-labelledby="time-tab-btn-expenses"
-              hidden={activeTab !== 'expenses'}
-            >
-              <ExpensesPanel />
-            </div>
-            <div
-              className="time-page__content"
-              role="tabpanel"
-              id="time-tab-timesheet"
-              aria-labelledby="time-tab-btn-timesheet"
-              hidden={activeTab !== 'timesheet'}
-            >
-              <div className="tsp-wrap">
-                <TimesheetPanel />
+            {activeTab === 'users' && (
+              <div
+                className="time-page__content"
+                role="tabpanel"
+                id="time-tab-users"
+                aria-labelledby="time-tab-btn-users"
+              >
+                <TimeUsersPanel />
               </div>
-            </div>
-            <div
-              className="time-page__content"
-              role="tabpanel"
-              id="time-tab-reports"
-              aria-labelledby="time-tab-btn-reports"
-              hidden={activeTab !== 'reports'}
-            >
-              <ReportsPanel />
-            </div>
-            <div
-              className="time-page__content"
-              role="tabpanel"
-              id="time-tab-settings"
-              aria-labelledby="time-tab-btn-settings"
-              hidden={activeTab !== 'settings'}
-            >
-              <TimeTrackingSettingsPanel />
-            </div>
+            )}
+            {activeTab === 'projects' && (
+              <div
+                className="time-page__content"
+                role="tabpanel"
+                id="time-tab-projects"
+                aria-labelledby="time-tab-btn-projects"
+              >
+                <ProjectsPanel />
+              </div>
+            )}
+            {activeTab === 'expenses' && (
+              <div
+                className="time-page__content"
+                role="tabpanel"
+                id="time-tab-expenses"
+                aria-labelledby="time-tab-btn-expenses"
+              >
+                <ExpensesPanel />
+              </div>
+            )}
+            {activeTab === 'timesheet' && (
+              <div
+                className="time-page__content"
+                role="tabpanel"
+                id="time-tab-timesheet"
+                aria-labelledby="time-tab-btn-timesheet"
+              >
+                <div className="tsp-wrap">
+                  <TimesheetPanel />
+                </div>
+              </div>
+            )}
+            {activeTab === 'reports' && (
+              <div
+                className="time-page__content"
+                role="tabpanel"
+                id="time-tab-reports"
+                aria-labelledby="time-tab-btn-reports"
+              >
+                <ReportsPanel />
+              </div>
+            )}
+            {activeTab === 'settings' && (
+              <div
+                className="time-page__content"
+                role="tabpanel"
+                id="time-tab-settings"
+                aria-labelledby="time-tab-btn-settings"
+              >
+                <TimeTrackingSettingsPanel />
+              </div>
+            )}
           </>
         )}
       </main>

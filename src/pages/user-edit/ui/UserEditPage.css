@@ -1296,7 +1296,11 @@
   cursor: pointer; text-align: left; transition: background 0.1s;
 }
 .uep__proj-drop-item:last-child { border-bottom: none; }
-.uep__proj-drop-item:hover { background: color-mix(in srgb, var(--app-accent, #4f46e5) 5%, transparent); }
+.uep__proj-drop-item:hover:not(:disabled) { background: color-mix(in srgb, var(--app-accent, #4f46e5) 5%, transparent); }
+.uep__proj-drop-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .uep__proj-drop-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
 .uep__proj-drop-name { font-size: 0.875rem; font-weight: 600; color: var(--app-text, #111827); }
 .uep__proj-drop-client { font-size: 0.75rem; color: var(--app-muted, #6b7280); }
@@ -1372,10 +1376,14 @@
   transition: all 0.14s; padding: 0;
 }
 .uep__proj-item-remove svg { width: 12px; height: 12px; }
-.uep__proj-item-remove:hover {
+.uep__proj-item-remove:hover:not(:disabled) {
   background: rgba(220,38,38,0.08);
   border-color: rgba(220,38,38,0.25);
   color: #dc2626;
+}
+.uep__proj-item-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .uep__proj-item-info {

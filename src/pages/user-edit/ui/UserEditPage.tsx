@@ -11,9 +11,16 @@ import {
   createHourlyRate,
   patchHourlyRate,
   deleteHourlyRate,
+  getUserProjectAccess,
+  putUserProjectAccess,
+  listAllClientProjectsForPicker,
+  listTimeManagerClients,
   isForbiddenError,
   type HourlyRateRow,
+  type TimeManagerClientProjectRow,
 } from '@entities/time-tracking'
+import { useCurrentUser } from '@shared/hooks'
+import { canManageUserProjectAccess } from '../../time-tracking/model/timeManagerClientsAccess'
 import './UserEditPage.css'
 
 type TabId = 'basic' | 'rates' | 'projects'
@@ -48,30 +55,22 @@ function hourlyRowToRate(row: HourlyRateRow): Rate {
   }
 }
 
-type Project = { id: string; name: string; client: string; color: string }
-const MOCK_PROJECTS: Project[] = [
-  { id: 'p1',  name: 'ACWA Power',                       client: 'ACWA Power',           color: '#4f46e5' },
-  { id: 'p2',  name: 'ACWA Power Sirdarya',               client: 'ACWA Power Sirdarya',  color: '#7c3aed' },
-  { id: 'p3',  name: 'AGRI SOLAR SPV',                    client: 'AGRI SOLAR SPV',       color: '#0891b2' },
-  { id: 'p4',  name: 'AKA Bank',                          client: 'AKA Bank',             color: '#b45309' },
-  { id: 'p5',  name: 'ALLIED GREEN AMMONIA',              client: 'ALLIED GREEN AMMONIA', color: '#dc2626' },
-  { id: 'p6',  name: 'Agritek Agricultural',              client: 'Agritek Agricultural', color: '#9333ea' },
-  { id: 'p7',  name: 'General Legal Services',            client: 'Kosta Legal',          color: '#16a34a' },
-  { id: 'p8',  name: 'Independent opinion',               client: 'UzQSB',                color: '#0f766e' },
-  { id: 'p9',  name: 'Onshore Account Pledge/Amendment',  client: 'Agritek Agricultural', color: '#64748b' },
-  { id: 'p10', name: 'Restructuring',                     client: 'AKA Bank',             color: '#0891b2' },
-  { id: 'p11', name: 'LLC Establishment',                 client: 'ALLIED GREEN AMMONIA', color: '#f59e0b' },
-  { id: 'p12', name: 'UzQSB Advisory',                    client: 'UzQSB',                color: '#06b6d4' },
-]
+type ProjectListItem = { id: string; name: string; client: string; color: string }
 
-type AssignedProject = { id: string; manages: boolean }
-
-function assignKey(userId: number) { return `uep_projects_${userId}` }
-function loadAssigned(userId: number): AssignedProject[] {
-  try { return JSON.parse(localStorage.getItem(assignKey(userId)) ?? '[]') } catch { return [] }
+function hashToColor(seed: string): string {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) >>> 0
+  const hue = h % 360
+  return `hsl(${hue} 52% 40%)`
 }
-function saveAssigned(userId: number, list: AssignedProject[]) {
-  localStorage.setItem(assignKey(userId), JSON.stringify(list))
+
+function buildProjectCatalog(rows: TimeManagerClientProjectRow[], clientNameById: Map<string, string>): ProjectListItem[] {
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name,
+    client: clientNameById.get(p.client_id) ?? '',
+    color: hashToColor(p.id),
+  }))
 }
 
 const CAPACITY_DEFAULT = 35
@@ -202,6 +201,11 @@ export function UserEditPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const { user: currentEditor } = useCurrentUser()
+  const canEditTTProjectAccess = canManageUserProjectAccess(
+    currentEditor?.role,
+    currentEditor?.time_tracking_role ?? null,
+  )
 
   const [user, setUser]           = useState<User | null>(null)
   const [loading, setLoading]     = useState(true)
@@ -227,10 +231,14 @@ export function UserEditPage() {
   const [ratesError, setRatesError] = useState<string | null>(null)
   const [costRatesForbidden, setCostRatesForbidden] = useState(false)
 
-  const [assigned, setAssigned]           = useState<AssignedProject[]>([])
+  const [projectCatalog, setProjectCatalog] = useState<ProjectListItem[]>([])
+  const [assignedProjectIds, setAssignedProjectIds] = useState<string[]>([])
+  const [projectsTabLoading, setProjectsTabLoading] = useState(false)
+  const [projectsTabError, setProjectsTabError] = useState<string | null>(null)
+  const [projectsTabSaving, setProjectsTabSaving] = useState(false)
   const [projectSearch, setProjectSearch] = useState('')
-  const [searchOpen, setSearchOpen]       = useState(false)
-  const searchBoxRef                      = useRef<HTMLDivElement>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchBoxRef = useRef<HTMLDivElement>(null)
 
   const [capacity,     setCapacity]     = useState<number>(CAPACITY_DEFAULT)
   const [capCustom,    setCapCustom]    = useState(false)
@@ -249,7 +257,9 @@ export function UserEditPage() {
         setRates([])
         setRatesError(null)
         setCostRatesForbidden(false)
-        setAssigned(loadAssigned(u.id))
+        setAssignedProjectIds([])
+        setProjectCatalog([])
+        setProjectsTabError(null)
         const capSt = capacityStateFromUser(u)
         setCapacity(capSt.capacity)
         setCapCustom(capSt.capCustom)
@@ -324,6 +334,58 @@ export function UserEditPage() {
     void refreshRates()
   }, [user?.id, activeTab, refreshRates])
 
+  useEffect(() => {
+    if (!user || activeTab !== 'projects') return
+    let cancelled = false
+    setProjectsTabLoading(true)
+    setProjectsTabError(null)
+    ;(async () => {
+      try {
+        await upsertTimeTrackingUser(user)
+        const [clients, access, catalogRows] = await Promise.all([
+          listTimeManagerClients(),
+          getUserProjectAccess(user.id),
+          listAllClientProjectsForPicker(),
+        ])
+        if (cancelled) return
+        const nameById = new Map(clients.map((c) => [c.id, c.name]))
+        setProjectCatalog(buildProjectCatalog(catalogRows, nameById))
+        setAssignedProjectIds(access.projectIds)
+      } catch (e) {
+        if (!cancelled) {
+          setProjectsTabError(e instanceof Error ? e.message : 'Не удалось загрузить проекты и доступ')
+          setProjectCatalog([])
+          setAssignedProjectIds([])
+        }
+      } finally {
+        if (!cancelled) setProjectsTabLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, activeTab])
+
+  async function persistProjectAccess(nextIds: string[]) {
+    if (!user || !canEditTTProjectAccess) return
+    setProjectsTabSaving(true)
+    setProjectsTabError(null)
+    try {
+      await putUserProjectAccess(user.id, nextIds)
+      setAssignedProjectIds(nextIds)
+    } catch (e) {
+      setProjectsTabError(e instanceof Error ? e.message : 'Не удалось сохранить доступ')
+      try {
+        const a = await getUserProjectAccess(user.id)
+        setAssignedProjectIds(a.projectIds)
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      setProjectsTabSaving(false)
+    }
+  }
+
   async function handleCapacityChange(val: string) {
     if (val === '__custom__') {
       setCapCustom(true)
@@ -379,32 +441,20 @@ export function UserEditPage() {
   }
 
   const assignProject = (projId: string) => {
-    if (!user || assigned.find((a) => a.id === projId)) return
-    const next = [...assigned, { id: projId, manages: false }]
-    setAssigned(next)
-    saveAssigned(user.id, next)
+    if (!user || !canEditTTProjectAccess || assignedProjectIds.includes(projId)) return
+    void persistProjectAccess([...assignedProjectIds, projId])
     setProjectSearch('')
+    setSearchOpen(false)
   }
 
   const removeProject = (projId: string) => {
-    if (!user) return
-    const next = assigned.filter((a) => a.id !== projId)
-    setAssigned(next)
-    saveAssigned(user.id, next)
+    if (!user || !canEditTTProjectAccess) return
+    void persistProjectAccess(assignedProjectIds.filter((x) => x !== projId))
   }
 
-  const toggleManages = (projId: string, manages: boolean) => {
-    if (!user) return
-    const next = assigned.map((a) => a.id === projId ? { ...a, manages } : a)
-    setAssigned(next)
-    saveAssigned(user.id, next)
-  }
-
-  const setAllManages = (manages: boolean) => {
-    if (!user) return
-    const next = assigned.map((a) => ({ ...a, manages }))
-    setAssigned(next)
-    saveAssigned(user.id, next)
+  const clearAllProjects = () => {
+    if (!user || !canEditTTProjectAccess) return
+    void persistProjectAccess([])
   }
 
   if (loading) {
@@ -567,7 +617,7 @@ export function UserEditPage() {
             )}
             <div className="uep__meta-row">
               <span className="uep__meta-label">Проектов</span>
-              <span className="uep__meta-value">{assigned.length}</span>
+              <span className="uep__meta-value">{assignedProjectIds.length}</span>
             </div>
           </div>
         </aside>
@@ -794,86 +844,161 @@ export function UserEditPage() {
             </div>
           )}
 {activeTab === 'projects' && (() => {
-            const unassigned = MOCK_PROJECTS.filter((p) => !assigned.find((a) => a.id === p.id))
+            const catalogById = new Map(projectCatalog.map((p) => [p.id, p]))
+            const assignedRows: ProjectListItem[] = assignedProjectIds.map((pid) => {
+              const p = catalogById.get(pid)
+              return p ?? { id: pid, name: 'Проект недоступен', client: '', color: hashToColor(pid) }
+            })
+            const unassigned = projectCatalog.filter((p) => !assignedProjectIds.includes(p.id))
             const q = projectSearch.trim().toLowerCase()
             const searchResults = q
-              ? unassigned.filter((p) =>
-                  p.name.toLowerCase().includes(q) ||
-                  p.client.toLowerCase().includes(q)
+              ? unassigned.filter(
+                  (p) => p.name.toLowerCase().includes(q) || p.client.toLowerCase().includes(q),
                 )
               : unassigned
+            const pickDisabled = !canEditTTProjectAccess || projectsTabSaving || projectsTabLoading
 
             return (
               <div className="uep__proj-page">
-<div className="uep__proj-header">
+                <div className="uep__proj-header">
                   <div className="uep__proj-header-text">
                     <h1 className="uep__proj-heading">
                       {first ? `${first}'s assigned projects` : 'Назначенные проекты'}
                     </h1>
                     <p className="uep__proj-subheading">
-                      {first ? first : 'Сотрудник'} может отслеживать время только по назначенным проектам.
+                      {first ? first : 'Сотрудник'} может отслеживать время только по назначенным проектам (данные из сервиса учёта времени).
                     </p>
+                    {!canEditTTProjectAccess && (
+                      <p className="uep__proj-subheading" style={{ marginTop: '0.35rem', opacity: 0.85 }}>
+                        У вас нет прав на изменение доступа к проектам для этого пользователя.
+                      </p>
+                    )}
                   </div>
-                  {assigned.length > 0 && (
-                    <button type="button" className="uep__proj-clear-btn"
-                      onClick={() => { if (user) { setAssigned([]); saveAssigned(user.id, []) } }}>
+                  {assignedProjectIds.length > 0 && canEditTTProjectAccess && (
+                    <button
+                      type="button"
+                      className="uep__proj-clear-btn"
+                      disabled={projectsTabSaving || projectsTabLoading}
+                      onClick={clearAllProjects}
+                    >
                       Убрать из всех
                     </button>
                   )}
                 </div>
-<div className="uep__proj-search-wrap" ref={searchBoxRef}>
+                {projectsTabError && (
+                  <p className="uep__field-error" role="alert" style={{ marginBottom: '0.75rem' }}>
+                    {projectsTabError}
+                  </p>
+                )}
+                {projectsTabLoading && (
+                  <p className="uep__proj-subheading" role="status" style={{ marginBottom: '0.75rem' }}>
+                    Загрузка списка проектов…
+                  </p>
+                )}
+                {projectsTabSaving && (
+                  <p className="uep__proj-subheading" role="status" style={{ marginBottom: '0.75rem' }}>
+                    Сохранение…
+                  </p>
+                )}
+                <div className="uep__proj-search-wrap" ref={searchBoxRef}>
                   <div className="uep__proj-search-field">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
                     </svg>
                     <input
                       type="text"
                       placeholder="Найти проект или клиента..."
                       value={projectSearch}
-                      onChange={(e) => { setProjectSearch(e.target.value); setSearchOpen(true) }}
+                      disabled={projectsTabLoading || !canEditTTProjectAccess}
+                      onChange={(e) => {
+                        setProjectSearch(e.target.value)
+                        setSearchOpen(true)
+                      }}
                       onFocus={() => setSearchOpen(true)}
                       onBlur={() => setTimeout(() => setSearchOpen(false), 160)}
                     />
                     {projectSearch && (
-                      <button type="button" onMouseDown={(e) => { e.preventDefault(); setProjectSearch(''); setSearchOpen(false) }} aria-label="Очистить">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setProjectSearch('')
+                          setSearchOpen(false)
+                        }}
+                        aria-label="Очистить"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
                       </button>
                     )}
                   </div>
-{searchOpen && projectSearch.trim() && createPortal(
-                    (() => {
-                      const rect = searchBoxRef.current?.getBoundingClientRect()
-                      if (!rect) return null
-                      return (
-                        <div className="uep__proj-drop" style={{ top: rect.bottom + 4, left: rect.left, width: rect.width }}>
-                          {searchResults.length === 0
-                            ? <p className="uep__proj-drop-empty">Проекты не найдены</p>
-                            : searchResults.map((p) => (
-                              <button key={p.id} type="button" className="uep__proj-drop-item"
-                                onMouseDown={() => { assignProject(p.id); setSearchOpen(false) }}>
-                                <span className="uep__proj-color-dot" style={{ background: p.color }} />
-                                <span className="uep__proj-drop-info">
-                                  <span className="uep__proj-drop-name">{p.name}</span>
-                                  <span className="uep__proj-drop-client">{p.client}</span>
-                                </span>
-                                <svg className="uep__proj-drop-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                                </svg>
-                              </button>
-                            ))
-                          }
-                        </div>
-                      )
-                    })(),
-                    document.body
-                  )}
+                  {searchOpen &&
+                    projectSearch.trim() &&
+                    !projectsTabLoading &&
+                    createPortal(
+                      (() => {
+                        const rect = searchBoxRef.current?.getBoundingClientRect()
+                        if (!rect) return null
+                        return (
+                          <div
+                            className="uep__proj-drop"
+                            style={{ top: rect.bottom + 4, left: rect.left, width: rect.width }}
+                          >
+                            {searchResults.length === 0 ? (
+                              <p className="uep__proj-drop-empty">Проекты не найдены</p>
+                            ) : (
+                              searchResults.map((p) => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  className="uep__proj-drop-item"
+                                  disabled={pickDisabled}
+                                  onMouseDown={() => {
+                                    if (pickDisabled) return
+                                    assignProject(p.id)
+                                    setSearchOpen(false)
+                                  }}
+                                >
+                                  <span className="uep__proj-color-dot" style={{ background: p.color }} />
+                                  <span className="uep__proj-drop-info">
+                                    <span className="uep__proj-drop-name">{p.name}</span>
+                                    <span className="uep__proj-drop-client">{p.client}</span>
+                                  </span>
+                                  <svg
+                                    className="uep__proj-drop-plus"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                  >
+                                    <line x1="12" y1="5" x2="12" y2="19" />
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                  </svg>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )
+                      })(),
+                      document.body,
+                    )}
                 </div>
-{assigned.length === 0 ? (
+                {assignedRows.length === 0 ? (
                   <div className="uep__proj-empty">
                     <div className="uep__proj-empty-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="2" y="7" width="20" height="14" rx="2"/>
-                        <path d="M16 7V5a2 2 0 0 0-4 0v2M8 7V5a2 2 0 0 0-4 0v2"/>
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <rect x="2" y="7" width="20" height="14" rx="2" />
+                        <path d="M16 7V5a2 2 0 0 0-4 0v2M8 7V5a2 2 0 0 0-4 0v2" />
                       </svg>
                     </div>
                     <p className="uep__proj-empty-title">Проекты не назначены</p>
@@ -883,38 +1008,27 @@ export function UserEditPage() {
                   <div className="uep__proj-list">
                     <div className="uep__proj-list-head">
                       <span>Проект</span>
-                      <span className="uep__proj-manages-head">
-                        Руководит проектом
-                        <span className="uep__proj-manages-btns">
-                          <button type="button" onClick={() => setAllManages(true)}>Все</button>
-                          <span>/</span>
-                          <button type="button" onClick={() => setAllManages(false)}>Нет</button>
-                        </span>
-                      </span>
                     </div>
-                    {assigned.map((a) => {
-                      const p = MOCK_PROJECTS.find((x) => x.id === a.id)
-                      if (!p) return null
-                      return (
-                        <div key={a.id} className="uep__proj-item">
-                          <button type="button" className="uep__proj-item-remove"
-                            onClick={() => removeProject(a.id)} title={`Убрать из ${p.name}`}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                          </button>
-                          <span className="uep__proj-color-dot" style={{ background: p.color }} />
-                          <span className="uep__proj-item-info">
-                            <span className="uep__proj-item-name">{p.name}</span>
-                            <span className="uep__proj-item-client">{p.client}</span>
-                          </span>
-                          <label className="uep__proj-manages-toggle" title="Руководит проектом">
-                            <input type="checkbox" checked={a.manages} onChange={(e) => toggleManages(a.id, e.target.checked)} />
-                            <span className="uep__proj-toggle-track">
-                              <span className="uep__proj-toggle-thumb" />
-                            </span>
-                          </label>
-                        </div>
-                      )
-                    })}
+                    {assignedRows.map((p) => (
+                      <div key={p.id} className="uep__proj-item">
+                        <button
+                          type="button"
+                          className="uep__proj-item-remove"
+                          disabled={pickDisabled}
+                          onClick={() => removeProject(p.id)}
+                          title={`Убрать из ${p.name}`}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M18 6L6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                        <span className="uep__proj-color-dot" style={{ background: p.color }} />
+                        <span className="uep__proj-item-info">
+                          <span className="uep__proj-item-name">{p.name}</span>
+                          <span className="uep__proj-item-client">{p.client}</span>
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

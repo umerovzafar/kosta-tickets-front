@@ -30,7 +30,6 @@ export type TimeEntryRow = {
   updated_at: string | null
 }
 
-/** Ответ gateway / time_tracking (snake_case). */
 export type HourlyRateRow = {
   id: string
   auth_user_id: number
@@ -276,6 +275,35 @@ export async function deleteHourlyRate(authUserId: number, rateId: string): Prom
     method: 'DELETE',
   })
   await throwIfNotOk(res)
+}
+
+/** Ответ `GET/PUT .../users/{id}/project-access` (camelCase или snake_case). */
+export type UserProjectAccessOut = {
+  projectIds: string[]
+}
+
+function parseUserProjectAccess(raw: unknown): UserProjectAccessOut {
+  if (!raw || typeof raw !== 'object') return { projectIds: [] }
+  const o = raw as { projectIds?: unknown; project_ids?: unknown }
+  const ids = o.projectIds ?? o.project_ids
+  if (!Array.isArray(ids)) return { projectIds: [] }
+  return { projectIds: ids.map(String) }
+}
+
+export async function getUserProjectAccess(authUserId: number): Promise<UserProjectAccessOut> {
+  const res = await apiFetch(`/api/v1/time-tracking/users/${authUserId}/project-access`)
+  await throwIfNotOk(res)
+  return parseUserProjectAccess(await res.json())
+}
+
+export async function putUserProjectAccess(authUserId: number, projectIds: string[]): Promise<UserProjectAccessOut> {
+  const res = await apiFetch(`/api/v1/time-tracking/users/${authUserId}/project-access`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectIds }),
+  })
+  await throwIfNotOk(res)
+  return parseUserProjectAccess(await res.json())
 }
 
 /** Ответ `GET/POST/PATCH` клиентов time manager (snake_case). Проценты могут приходить как строки из Decimal. */
@@ -736,9 +764,35 @@ export async function deleteClientProject(clientId: string, projectId: string): 
   await throwIfNotOk(res)
 }
 
+/** Все проекты всех клиентов (для настройки доступа пользователю). */
+export async function listAllClientProjectsForPicker(): Promise<TimeManagerClientProjectRow[]> {
+  const clients = await listTimeManagerClients()
+  if (clients.length === 0) return []
+  const chunks = await Promise.all(
+    clients.map((c) =>
+      listClientProjects(c.id).catch((e) => {
+        if (isForbiddenError(e)) throw e
+        return [] as TimeManagerClientProjectRow[]
+      }),
+    ),
+  )
+  const rows = chunks.flat()
+  const nameById = new Map(clients.map((c) => [c.id, c.name]))
+  rows.sort((a, b) => {
+    const ca = nameById.get(a.client_id) ?? ''
+    const cb = nameById.get(b.client_id) ?? ''
+    const cmp = ca.localeCompare(cb, 'ru', { sensitivity: 'base' })
+    if (cmp !== 0) return cmp
+    return a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' })
+  })
+  return rows
+}
+
 export function isForbiddenError(e: unknown): boolean {
   return (
     e instanceof Error &&
-    /\b403\b|Недостаточно прав|доступны только администраторам|доступны администраторам/i.test(e.message)
+    /\b403\b|Недостаточно прав|доступны только администраторам|доступны администраторам|доступа к проектам/i.test(
+      e.message,
+    )
   )
 }

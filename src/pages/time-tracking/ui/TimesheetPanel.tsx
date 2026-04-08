@@ -1,6 +1,24 @@
-import { useState, useMemo, useEffect, useId } from 'react'
+import { useState, useMemo, useEffect, useId, useRef, useReducer } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  upsertTimeTrackingUser,
+  getUserProjectAccess,
+  listAllClientProjectsForPicker,
+  listTimeManagerClients,
+  listClientProjects,
+  listClientTasks,
+  listTimeEntries,
+  createTimeEntry,
+  patchTimeEntry,
+  deleteTimeEntry,
+  isForbiddenError,
+  type TimeManagerClientProjectRow,
+  type TimeEntryRow,
+} from '@entities/time-tracking'
+import type { User } from '@entities/user'
+import { useCurrentUser } from '@shared/hooks'
 import { TimesheetSkeleton } from './TimesheetSkeleton'
+import { TimesheetSearchableSelect } from './TimesheetSearchableSelect'
 
 function startOfWeek(d: Date): Date {
   const day = new Date(d)
@@ -28,10 +46,31 @@ function fmtShort(d: Date) {
   return d.toLocaleDateString('ru-RU', { weekday: 'short' }).replace('.', '').toUpperCase()
 }
 function fmtHours(h: number): string {
-  if (h === 0) return '0:00'
-  const wh = Math.floor(h)
-  const wm = Math.round((h - wh) * 60)
+  if (!Number.isFinite(h) || h <= 0) return '0:00'
+  const totalMin = Math.max(0, Math.round(h * 60 + 1e-9))
+  const wh = Math.floor(totalMin / 60)
+  const wm = totalMin % 60
   return `${wh}:${String(wm).padStart(2, '0')}`
+}
+
+/** Часы:минуты:секунды из миллисекунд — для живого таймера (всегда три поля: ч:мм:сс). */
+function formatClockFromMs(totalMs: number): string {
+  if (!Number.isFinite(totalMs) || totalMs < 0) return '0:00:00'
+  const s = Math.max(0, Math.floor(totalMs / 1000))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+/**
+ * Округление до целых минут по правилам математики: до 30 с «вниз», от 30 с — «вверх»
+ * (ближайшая минута: Math.round от длительности в минутах; ровно 30 с → 1 мин).
+ */
+function elapsedMsToLoggedHours(elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return 0
+  const minutes = Math.round(elapsedMs / 60_000)
+  return minutes / 60
 }
 function fmtDateHeading(d: Date): string {
   return d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -43,6 +82,8 @@ type TimeEntry = {
   date: string
   project: string
   client: string
+  /** UUID проекта в time-tracking (для редактирования и API). */
+  projectId?: string
   task: string
   notes: string
   hours: number
@@ -51,30 +92,231 @@ type TimeEntry = {
   running?: boolean
 }
 
-const FORM_PROJECTS: { id: string; name: string; client: string; color: string }[] = []
-const FORM_TASKS: string[] = []
+type ProjectOption = { id: string; name: string; client: string; color: string; clientId: string }
+
+function isDraftTimeEntryId(id: string): boolean {
+  return id.startsWith('te_')
+}
+
+function parseDescription(raw: string | null): { task: string; notes: string } {
+  if (!raw?.trim()) return { task: '', notes: '' }
+  const idx = raw.indexOf('\n')
+  if (idx === -1) return { task: raw.trim(), notes: '' }
+  return { task: raw.slice(0, idx).trim(), notes: raw.slice(idx + 1).trim() }
+}
+
+function buildDescription(task: string, notes: string): string | null {
+  const t = task.trim()
+  const n = notes.trim()
+  if (!t && !n) return null
+  if (!t) return n
+  if (!n) return t
+  return `${t}\n${n}`
+}
+
+function uniqEntriesById(list: TimeEntry[]): TimeEntry[] {
+  const seen = new Set<string>()
+  const out: TimeEntry[] = []
+  for (const e of list) {
+    if (seen.has(e.id)) continue
+    seen.add(e.id)
+    out.push(e)
+  }
+  return out
+}
+
+function mapTimeEntryRowToUi(row: TimeEntryRow, projectById: Map<string, ProjectOption>): TimeEntry {
+  const pid = row.project_id ?? undefined
+  const p = pid ? projectById.get(pid) : undefined
+  const { task, notes } = parseDescription(row.description)
+  const hRaw = row.hours
+  const h = typeof hRaw === 'number' ? hRaw : parseFloat(String(hRaw))
+  return {
+    id: row.id,
+    date: row.work_date,
+    project: p?.name ?? 'Проект',
+    client: p?.client ?? '',
+    projectId: pid,
+    task,
+    notes,
+    hours: Number.isFinite(h) ? h : 0,
+    billable: row.is_billable,
+    color: p?.color ?? hashToColor(pid ?? row.id),
+  }
+}
+
+function hoursToApiPayload(hours: number): number {
+  return Math.round(hours * 1_000_000) / 1_000_000
+}
+
+const TIMER_LS_PREFIX = 'tt_timesheet_timer_v1:'
+
+function timerStorageKey(userId: number): string {
+  return `${TIMER_LS_PREFIX}${userId}`
+}
+
+type TimerPersistPayload = {
+  v: 1
+  authUserId: number
+  entryId: string
+  startedAt: number
+  snapshot: TimeEntry
+}
+
+function parseTimerPayload(raw: string): TimerPersistPayload | null {
+  try {
+    const o = JSON.parse(raw) as Partial<TimerPersistPayload>
+    if (
+      o.v !== 1 ||
+      typeof o.authUserId !== 'number' ||
+      typeof o.entryId !== 'string' ||
+      typeof o.startedAt !== 'number' ||
+      !o.snapshot ||
+      typeof o.snapshot !== 'object'
+    ) {
+      return null
+    }
+    return o as TimerPersistPayload
+  } catch {
+    return null
+  }
+}
+
+type RunningTimerState = { entryId: string; startedAt: number }
+
+function groupProjectsByClient(list: ProjectOption[]): { client: string; projects: ProjectOption[] }[] {
+  const m = new Map<string, ProjectOption[]>()
+  for (const p of list) {
+    const c = (p.client || '').trim() || '—'
+    if (!m.has(c)) m.set(c, [])
+    m.get(c)!.push(p)
+  }
+  return [...m.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'ru', { sensitivity: 'base' }))
+    .map(([client, projs]) => ({
+      client,
+      projects: [...projs].sort((x, y) => x.name.localeCompare(y.name, 'ru', { sensitivity: 'base' })),
+    }))
+}
+
+function hashToColor(seed: string): string {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) >>> 0
+  const hue = h % 360
+  return `hsl(${hue} 52% 40%)`
+}
+
+async function loadTimesheetProjectOptions(user: User): Promise<{ items: ProjectOption[]; error: string | null }> {
+  await upsertTimeTrackingUser(user)
+  const access = await getUserProjectAccess(user.id)
+  const allowed = new Set(access.projectIds)
+  if (allowed.size === 0) {
+    return { items: [], error: null }
+  }
+
+  const clients = await listTimeManagerClients()
+  const nameById = new Map(clients.map((c) => [c.id, c.name]))
+
+  let rows: TimeManagerClientProjectRow[] = []
+  try {
+    rows = await listAllClientProjectsForPicker()
+  } catch {
+    const chunks = await Promise.all(
+      clients.map((c) =>
+        listClientProjects(c.id).catch((e) => {
+          if (isForbiddenError(e)) return [] as TimeManagerClientProjectRow[]
+          throw e
+        }),
+      ),
+    )
+    rows = chunks.flat()
+  }
+
+  const items = rows
+    .filter((p) => allowed.has(p.id))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      client: nameById.get(p.client_id) ?? '',
+      clientId: p.client_id,
+      color: hashToColor(p.id),
+    }))
+
+  if (allowed.size > 0 && items.length === 0) {
+    return {
+      items: [],
+      error:
+        'Доступ к проектам настроен, но список не удалось загрузить. Обновите страницу или проверьте права в разделе «Проекты».',
+    }
+  }
+
+  return { items, error: null }
+}
 
 type EntryForm = { projectId: string; task: string; date: string; hours: string; notes: string; billable: boolean }
 
-function EntryModal({ entry, defaultDate, onClose, onSave }: {
+function resolveInitialForm(
+  entry: TimeEntry | undefined,
+  defaultDate: string,
+  projects: ProjectOption[],
+  tasksByClientId: Record<string, string[]>,
+): EntryForm {
+  let projectId = ''
+  if (entry?.projectId && projects.some((p) => p.id === entry.projectId)) {
+    projectId = entry.projectId
+  } else if (entry) {
+    const m = projects.find((p) => p.name === entry.project && (!entry.client || p.client === entry.client))
+    projectId = m?.id ?? projects[0]?.id ?? ''
+  } else {
+    projectId = projects[0]?.id ?? ''
+  }
+  const p = projects.find((x) => x.id === projectId)
+  const taskNames = p ? (tasksByClientId[p.clientId] ?? []) : []
+  let task = entry?.task ?? ''
+  if (taskNames.length > 0 && !taskNames.includes(task)) {
+    task = taskNames[0] ?? ''
+  }
+  return {
+    projectId,
+    task,
+    date: entry?.date ?? defaultDate,
+    hours: entry ? fmtHours(entry.hours) : '',
+    notes: entry?.notes ?? '',
+    billable: entry?.billable ?? true,
+  }
+}
+
+function EntryModal({
+  entry,
+  defaultDate,
+  projects,
+  projectsLoading,
+  projectsLoadError,
+  tasksByClientId,
+  onClose,
+  onSave,
+}: {
   entry?: TimeEntry
   defaultDate: string
+  projects: ProjectOption[]
+  projectsLoading: boolean
+  projectsLoadError: string | null
+  tasksByClientId: Record<string, string[]>
   onClose: () => void
-  onSave: (e: TimeEntry) => void
+  onSave: (e: TimeEntry) => void | Promise<void>
 }) {
   const uid = useId()
-  const initProj = entry
-    ? (FORM_PROJECTS.find(p => p.name === entry.project) ?? FORM_PROJECTS[0])
-    : FORM_PROJECTS[0]
-
-  const [form, setForm] = useState<EntryForm>({
-    projectId: initProj?.id ?? '',
-    task:      entry?.task     ?? (FORM_TASKS[0] ?? ''),
-    date:      entry?.date     ?? defaultDate,
-    hours:     entry ? fmtHours(entry.hours) : '',
-    notes:     entry?.notes    ?? '',
-    billable:  entry?.billable ?? true,
-  })
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<EntryForm>(() =>
+    projects.length > 0 ? resolveInitialForm(entry, defaultDate, projects, tasksByClientId) : {
+      projectId: '',
+      task: '',
+      date: defaultDate,
+      hours: entry ? fmtHours(entry.hours) : '',
+      notes: entry?.notes ?? '',
+      billable: entry?.billable ?? true,
+    },
+  )
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -84,7 +326,20 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
     return () => { document.removeEventListener('keydown', h); document.body.style.overflow = '' }
   }, [onClose])
 
-  const proj = FORM_PROJECTS.find(p => p.id === form.projectId) ?? FORM_PROJECTS[0]
+  const proj = projects.find((p) => p.id === form.projectId) ?? projects[0]
+  const taskNames = proj ? (tasksByClientId[proj.clientId] ?? []) : []
+  const projectsByClient = useMemo(() => groupProjectsByClient(projects), [projects])
+  const flatProjects = useMemo(
+    () => projectsByClient.flatMap(({ projects: grp }) => grp),
+    [projectsByClient],
+  )
+
+  useEffect(() => {
+    if (!proj) return
+    const names = tasksByClientId[proj.clientId] ?? []
+    if (names.length === 0) return
+    setForm((f) => (names.includes(f.task) ? f : { ...f, task: names[0] ?? '' }))
+  }, [proj?.clientId, proj?.id, tasksByClientId])
 
   function parseHours(s: string): number {
     const clean = s.trim().replace(',', '.')
@@ -99,36 +354,54 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
     return parseFloat(clean)
   }
 
-  function handleSave() {
+  const hoursForTimerHint = useMemo(() => {
+    const t = form.hours.trim()
+    if (!t) return 0
+    const h = parseHours(form.hours)
+    if (Number.isNaN(h) || h < 0) return null
+    return h
+  }, [form.hours])
+
+  async function handleSave() {
     if (!proj) { setError('Нет доступных проектов'); return }
     const h = parseHours(form.hours)
     if (form.hours && (isNaN(h) || h < 0)) { setError('Некорректный формат (например: 1:30, 1 30 или 1.5)'); return }
-    onSave({
-      id:       entry?.id ?? `te_${Date.now()}`,
-      date:     form.date,
-      project:  proj.name,
-      client:   proj.client,
-      task:     form.task,
-      notes:    form.notes,
-      hours:    form.hours ? h : 0,
-      billable: form.billable,
-      color:    proj.color,
-    })
-    onClose()
+    const payload: TimeEntry = {
+      id:        entry?.id ?? `te_${Date.now()}`,
+      date:      form.date,
+      project:   proj.name,
+      client:    proj.client,
+      projectId: proj.id,
+      task:      form.task,
+      notes:     form.notes,
+      hours:     form.hours ? h : 0,
+      billable:  form.billable,
+      color:     proj.color,
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await Promise.resolve(onSave(payload))
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  if (!proj) {
+  if (projectsLoading) {
     return createPortal(
       <div className="tsp-ov" onClick={onClose}>
-        <div className="tsp-m" onClick={e => e.stopPropagation()}>
+        <div className="tsp-m" onClick={(e) => e.stopPropagation()}>
           <div className="tsp-m__head">
-            <h3 className="tsp-m__title">Добавить время</h3>
-            <button className="tsp-m__x" onClick={onClose} aria-label="Закрыть">
+            <h3 className="tsp-m__title">{entry ? 'Редактировать запись' : 'Добавить время'}</h3>
+            <button type="button" className="tsp-m__x" onClick={onClose} aria-label="Закрыть">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
           <div className="tsp-m__body">
-            <p className="tsp-m__err">Нет доступных проектов. Добавьте проекты в разделе Проекты.</p>
+            <p className="tsp-m__hint" role="status">Загрузка списка проектов…</p>
           </div>
           <div className="tsp-m__foot">
             <button type="button" className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>
@@ -137,7 +410,35 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
           </div>
         </div>
       </div>,
-      document.body
+      document.body,
+    )
+  }
+
+  if (!proj) {
+    return createPortal(
+      <div className="tsp-ov" onClick={onClose}>
+        <div className="tsp-m" onClick={(e) => e.stopPropagation()}>
+          <div className="tsp-m__head">
+            <h3 className="tsp-m__title">Добавить время</h3>
+            <button type="button" className="tsp-m__x" onClick={onClose} aria-label="Закрыть">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div className="tsp-m__body">
+            {projectsLoadError && <p className="tsp-m__err" role="alert">{projectsLoadError}</p>}
+            <p className="tsp-m__err">
+              Нет назначенных проектов для учёта времени. Попросите администратора выдать доступ к проектам
+              (учёт времени → Настройки → «Доступ к проектам» или карточка пользователя → вкладка «Проекты»).
+            </p>
+          </div>
+          <div className="tsp-m__foot">
+            <button type="button" className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
     )
   }
 
@@ -155,19 +456,85 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
 
         <div className="tsp-m__body">
           <div className="tsp-m__divider" />
-          <div className="tsp-m__f">
-            <label className="tsp-m__lbl" htmlFor={`${uid}-p`}>Проект</label>
-            <select id={`${uid}-p`} className="tsp-m__sel" value={form.projectId}
-              onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}>
-              {FORM_PROJECTS.map(p => <option key={p.id} value={p.id}>{p.name} · {p.client}</option>)}
-            </select>
-          </div>
-          <div className="tsp-m__f">
-            <label className="tsp-m__lbl" htmlFor={`${uid}-t`}>Задача</label>
-            <select id={`${uid}-t`} className="tsp-m__sel" value={form.task}
-              onChange={e => setForm(f => ({ ...f, task: e.target.value }))}>
-              {FORM_TASKS.map(t => <option key={t}>{t}</option>)}
-            </select>
+          <div className="tsp-m__stack">
+            <p className="tsp-m__stack-title">Проект и задача</p>
+            <p className="tsp-m__stack-hint">Сначала выберите проект, затем задачу из справочника этого клиента.</p>
+
+            <div className="tsp-m__f tsp-m__f--step">
+              <label className="tsp-m__lbl" htmlFor={`${uid}-proj-btn`}>
+                <span className="tsp-m__step-num">1</span>
+                Проект
+              </label>
+              <TimesheetSearchableSelect<ProjectOption>
+                buttonId={`${uid}-proj-btn`}
+                value={form.projectId}
+                items={flatProjects}
+                getOptionValue={(p) => p.id}
+                getOptionLabel={(p) => p.name}
+                getSearchText={(p) => `${p.name} ${p.client}`}
+                placeholder="Найдите или выберите проект…"
+                emptyListText="Нет проектов"
+                noMatchText="Ничего не найдено"
+                onSelect={(p) => {
+                  const names = tasksByClientId[p.clientId] ?? []
+                  setForm((f) => ({
+                    ...f,
+                    projectId: p.id,
+                    task:
+                      names.length > 0
+                        ? names.includes(f.task)
+                          ? f.task
+                          : (names[0] ?? '')
+                        : '',
+                  }))
+                }}
+                renderOption={(p) => (
+                  <span className="tsp-srch__opt-rich">
+                    <span className="tsp-srch__opt-name">{p.name}</span>
+                    <span className="tsp-srch__opt-meta">{p.client}</span>
+                  </span>
+                )}
+                buttonClassName="tsp-srch__btn--tall"
+              />
+            </div>
+
+            <div className="tsp-m__f tsp-m__f--step">
+              <label
+                className="tsp-m__lbl"
+                htmlFor={taskNames.length > 0 ? `${uid}-task-btn` : `${uid}-t-free`}
+              >
+                <span className="tsp-m__step-num">2</span>
+                Задача проекта
+              </label>
+              {taskNames.length > 0 ? (
+                <TimesheetSearchableSelect<string>
+                  buttonId={`${uid}-task-btn`}
+                  value={form.task}
+                  items={taskNames}
+                  getOptionValue={(t) => t}
+                  getOptionLabel={(t) => t}
+                  getSearchText={(t) => t}
+                  placeholder="Найдите или выберите задачу…"
+                  emptyListText="Нет задач в справочнике"
+                  noMatchText="Ничего не найдено"
+                  disabled={!form.projectId}
+                  onSelect={(t) => setForm((f) => ({ ...f, task: t }))}
+                />
+              ) : (
+                <input
+                  id={`${uid}-t-free`}
+                  type="text"
+                  className="tsp-m__inp"
+                  placeholder="Нет задач в справочнике — укажите вручную"
+                  value={form.task}
+                  disabled={!form.projectId}
+                  onChange={(e) => setForm((f) => ({ ...f, task: e.target.value }))}
+                />
+              )}
+              {proj && taskNames.length === 0 && (
+                <p className="tsp-m__field-note">Для клиента не заведены задачи в настройках — введите название вручную.</p>
+              )}
+            </div>
           </div>
           <div className="tsp-m__row">
             <div className="tsp-m__f">
@@ -179,6 +546,11 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
               <label className="tsp-m__lbl" htmlFor={`${uid}-h`}>Часы <span className="tsp-m__hint">1:30 или 1.5</span></label>
               <input id={`${uid}-h`} type="text" className="tsp-m__inp tsp-m__inp--h" placeholder="0:00"
                 value={form.hours} onChange={e => setForm(f => ({ ...f, hours: e.target.value }))} />
+              {hoursForTimerHint === 0 && (
+                <p className="tsp-m__field-note">
+                  При нулевых часах запись появится в табеле и сразу запустится таймер; на сервер время уйдёт после «Стоп».
+                </p>
+              )}
             </div>
           </div>
           <div className="tsp-m__f">
@@ -190,11 +562,11 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
         </div>
 
         <div className="tsp-m__foot">
-          <button type="button" className="tsp-m__btn tsp-m__btn--cancel" onClick={onClose}>
+          <button type="button" className="tsp-m__btn tsp-m__btn--cancel" disabled={saving} onClick={onClose}>
             Отмена
           </button>
-          <button type="button" className="tsp-m__btn tsp-m__btn--ok" onClick={handleSave}>
-            {entry ? 'Сохранить' : 'Добавить'}
+          <button type="button" className="tsp-m__btn tsp-m__btn--ok" disabled={saving} onClick={() => void handleSave()}>
+            {saving ? 'Сохранение…' : entry ? 'Сохранить' : 'Добавить'}
           </button>
         </div>
       </div>
@@ -204,19 +576,152 @@ function EntryModal({ entry, defaultDate, onClose, onSave }: {
 }
 
 export function TimesheetPanel() {
+  const { user: currentUser, loading: userLoading } = useCurrentUser()
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d }, [])
-  const [loading,   setLoading]   = useState(true)
+  const [projectsState, setProjectsState] = useState<{
+    loading: boolean
+    items: ProjectOption[]
+    error: string | null
+  }>({ loading: true, items: [], error: null })
+  const [tasksByClientId, setTasksByClientId] = useState<Record<string, string[]>>({})
+
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()))
   const [viewMode,  setViewMode]  = useState<'day' | 'week'>('day')
   const [entries,   setEntries]   = useState<TimeEntry[]>([])
+  const [entriesLoading, setEntriesLoading] = useState(false)
+  const [entriesError, setEntriesError] = useState<string | null>(null)
+
+  const projectCatalogVersion = useMemo(
+    () => projectsState.items.map((p) => p.id).join('|'),
+    [projectsState.items],
+  )
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 800)
-    return () => clearTimeout(t)
-  }, [])
+    if (userLoading) return
+    if (!currentUser) {
+      setProjectsState({ loading: false, items: [], error: null })
+      return
+    }
+    let cancelled = false
+    setProjectsState((s) => ({ ...s, loading: true, error: null }))
+    void loadTimesheetProjectOptions(currentUser)
+      .then(({ items, error }) => {
+        if (cancelled) return
+        setProjectsState({ loading: false, items, error })
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setProjectsState({
+          loading: false,
+          items: [],
+          error: e instanceof Error ? e.message : 'Не удалось загрузить проекты',
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser, userLoading])
+
+  useEffect(() => {
+    const opts = projectsState.items
+    if (opts.length === 0) {
+      setTasksByClientId({})
+      return
+    }
+    const clientIds = [...new Set(opts.map((p) => p.clientId))]
+    let cancelled = false
+    void Promise.all(
+      clientIds.map(async (cid) => {
+        try {
+          const tasks = await listClientTasks(cid)
+          return [cid, tasks.map((t) => t.name).filter(Boolean)] as const
+        } catch {
+          return [cid, []] as const
+        }
+      }),
+    ).then((pairs) => {
+      if (cancelled) return
+      setTasksByClientId(Object.fromEntries(pairs))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [projectsState.items])
+
+  const bootLoading = userLoading || projectsState.loading || entriesLoading
   const [modal,     setModal]     = useState<{ open: boolean; date: string; edit?: TimeEntry }>({ open: false, date: formatDate(today) })
   const [activeDay, setActiveDay] = useState<Date>(today)
-  const [running,   setRunning]   = useState<string | null>(null)
+  const [runningTimer, setRunningTimer] = useState<RunningTimerState | null>(null)
+  const runningTimerRef = useRef<RunningTimerState | null>(null)
+  runningTimerRef.current = runningTimer
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  const projectsCatalogRef = useRef(projectsState.items)
+  projectsCatalogRef.current = projectsState.items
+  /** Защита от повторного createTimeEntry по одному черновику (Strict Mode / двойной стоп). */
+  const draftTimerCreateInFlightRef = useRef(new Set<string>())
+  const [timerTick, bumpTimerTick] = useReducer((n: number) => n + 1, 0)
+
+  useEffect(() => {
+    if (!currentUser?.id || userLoading || projectsState.loading) return
+    let cancelled = false
+    setEntriesLoading(true)
+    setEntriesError(null)
+    const from = formatDate(weekStart)
+    const to = formatDate(addDays(weekStart, 6))
+    const user = currentUser
+    const byId = new Map(projectsCatalogRef.current.map((p) => [p.id, p]))
+    void (async () => {
+      try {
+        /* upsert уже выполняется в loadTimesheetProjectOptions до списка проектов */
+        const rows = await listTimeEntries(user.id, from, to)
+        if (cancelled) return
+        let mapped = rows.map((r) => mapTimeEntryRowToUi(r, byId))
+        try {
+          const raw = localStorage.getItem(timerStorageKey(user.id))
+          const p = raw ? parseTimerPayload(raw) : null
+          if (p && p.authUserId === user.id) {
+            const st = Number(p.startedAt)
+            if (Number.isFinite(st)) {
+              setRunningTimer({ entryId: p.entryId, startedAt: st })
+              if (!mapped.some((e) => e.id === p.entryId)) {
+                mapped = [...mapped, p.snapshot]
+              }
+            } else {
+              setRunningTimer(null)
+            }
+          } else {
+            setRunningTimer(null)
+          }
+        } catch {
+          setRunningTimer(null)
+        }
+        setEntries(uniqEntriesById(mapped))
+      } catch (e) {
+        if (!cancelled) {
+          setEntriesError(e instanceof Error ? e.message : 'Не удалось загрузить записи времени')
+          setEntries([])
+          setRunningTimer(null)
+        }
+      } finally {
+        if (!cancelled) setEntriesLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser?.id, userLoading, projectsState.loading, weekStart, projectCatalogVersion])
+
+  useEffect(() => {
+    if (!runningTimer) return
+    const t = setInterval(() => bumpTimerTick(), 1000)
+    return () => clearInterval(t)
+  }, [runningTimer])
+
+  useEffect(() => {
+    if (currentUser?.id) return
+    setRunningTimer(null)
+  }, [currentUser?.id])
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
@@ -235,15 +740,188 @@ export function TimesheetPanel() {
   function openEdit(entry: TimeEntry) { setModal({ open: true, date: entry.date, edit: entry }) }
   function closeModal() { setModal(m => ({ ...m, open: false, edit: undefined })) }
 
-  function saveEntry(e: TimeEntry) {
-    setEntries(prev => {
-      const idx = prev.findIndex(x => x.id === e.id)
-      if (idx >= 0) { const next = [...prev]; next[idx] = e; return next }
-      return [...prev, e]
-    })
+  async function persistTimerStopToApi(entryId: string, merged: TimeEntry) {
+    if (!currentUser?.id) return
+    const byId = new Map(projectsCatalogRef.current.map((p) => [p.id, p]))
+    try {
+      await upsertTimeTrackingUser(currentUser)
+      if (isDraftTimeEntryId(entryId)) {
+        const inFlight = draftTimerCreateInFlightRef.current
+        if (inFlight.has(entryId)) return
+        inFlight.add(entryId)
+        try {
+          const row = await createTimeEntry(currentUser.id, {
+            workDate: merged.date,
+            hours: hoursToApiPayload(merged.hours),
+            isBillable: merged.billable,
+            projectId: merged.projectId ?? null,
+            description: buildDescription(merged.task, merged.notes),
+          })
+          const next = mapTimeEntryRowToUi(row, byId)
+          setEntries((prev) => {
+            const stripped = prev.filter((x) => x.id !== entryId && x.id !== next.id)
+            return uniqEntriesById([...stripped, next])
+          })
+        } finally {
+          inFlight.delete(entryId)
+        }
+      } else {
+        await patchTimeEntry(currentUser.id, entryId, {
+          hours: hoursToApiPayload(merged.hours),
+        })
+        setEntries((prev) =>
+          prev.map((x) => (x.id === entryId ? { ...x, hours: merged.hours } : x)),
+        )
+      }
+    } catch (e) {
+      setEntriesError(e instanceof Error ? e.message : 'Не удалось сохранить время с таймера')
+    }
   }
-  function deleteEntry(id: string) { setEntries(prev => prev.filter(e => e.id !== id)) }
-  function toggleRun(id: string) { setRunning(r => r === id ? null : id) }
+
+  /** Остановить таймер: прибавить округлённые часы к строке, снять LS, при необходимости — API. */
+  function flushStopTimer(prev: RunningTimerState) {
+    const uid = currentUser?.id
+    const elapsedMs = Date.now() - prev.startedAt
+    const addH = elapsedMsToLoggedHours(elapsedMs)
+    const prevId = prev.entryId
+    const ent = entriesRef.current.find((x) => x.id === prevId)
+    const merged = ent ? { ...ent, hours: ent.hours + addH } : null
+    setEntries((ents) =>
+      ents.map((row) => (row.id === prevId ? { ...row, hours: row.hours + addH } : row)),
+    )
+    if (uid) {
+      try {
+        localStorage.removeItem(timerStorageKey(uid))
+      } catch {
+        /* ignore */
+      }
+    }
+    if (merged && addH > 0) void persistTimerStopToApi(prevId, merged)
+  }
+
+  async function saveEntry(e: TimeEntry) {
+    if (!currentUser) throw new Error('Не удалось определить пользователя')
+    setEntriesError(null)
+    await upsertTimeTrackingUser(currentUser)
+    const byId = new Map(projectsCatalogRef.current.map((p) => [p.id, p]))
+
+    const hoursPositive = Number.isFinite(e.hours) && e.hours > 0
+    if (!hoursPositive) {
+      setEntries((prev) => {
+        const without = prev.filter((x) => x.id !== e.id)
+        return [...without, { ...e, hours: 0 }]
+      })
+      const uid = currentUser.id
+      const prevRt = runningTimerRef.current
+      if (prevRt?.entryId === e.id) {
+        try {
+          const payload: TimerPersistPayload = {
+            v: 1,
+            authUserId: uid,
+            entryId: e.id,
+            startedAt: prevRt.startedAt,
+            snapshot: { ...e, hours: 0 },
+          }
+          localStorage.setItem(timerStorageKey(uid), JSON.stringify(payload))
+        } catch {
+          /* ignore */
+        }
+        return
+      }
+      if (prevRt) flushStopTimer(prevRt)
+      const startedAt = Date.now()
+      try {
+        const payload: TimerPersistPayload = {
+          v: 1,
+          authUserId: uid,
+          entryId: e.id,
+          startedAt,
+          snapshot: { ...e, hours: 0 },
+        }
+        localStorage.setItem(timerStorageKey(uid), JSON.stringify(payload))
+      } catch {
+        /* ignore */
+      }
+      setRunningTimer({ entryId: e.id, startedAt })
+      return
+    }
+
+    const desc = buildDescription(e.task, e.notes)
+    if (isDraftTimeEntryId(e.id)) {
+      const row = await createTimeEntry(currentUser.id, {
+        workDate: e.date,
+        hours: hoursToApiPayload(e.hours),
+        isBillable: e.billable,
+        projectId: e.projectId ?? null,
+        description: desc,
+      })
+      setEntries((prev) => [...prev.filter((x) => x.id !== e.id), mapTimeEntryRowToUi(row, byId)])
+    } else {
+      const row = await patchTimeEntry(currentUser.id, e.id, {
+        workDate: e.date,
+        hours: hoursToApiPayload(e.hours),
+        isBillable: e.billable,
+        projectId: e.projectId ?? null,
+        description: desc,
+      })
+      setEntries((prev) => prev.map((x) => (x.id === e.id ? mapTimeEntryRowToUi(row, byId) : x)))
+    }
+  }
+
+  async function deleteEntry(id: string) {
+    setRunningTimer((rt) => {
+      if (rt?.entryId === id && currentUser?.id) {
+        try {
+          localStorage.removeItem(timerStorageKey(currentUser.id))
+        } catch {
+          /* ignore */
+        }
+        return null
+      }
+      return rt
+    })
+    if (currentUser && !isDraftTimeEntryId(id)) {
+      setEntriesError(null)
+      try {
+        await upsertTimeTrackingUser(currentUser)
+        await deleteTimeEntry(currentUser.id, id)
+      } catch (e) {
+        setEntriesError(e instanceof Error ? e.message : 'Не удалось удалить запись')
+        return
+      }
+    }
+    setEntries((prev) => prev.filter((e) => e.id !== id))
+  }
+
+  function toggleRun(id: string) {
+    const uid = currentUser?.id
+    const prev = runningTimerRef.current
+    if (prev?.entryId === id) {
+      flushStopTimer(prev)
+      setRunningTimer(null)
+      return
+    }
+    if (prev) {
+      flushStopTimer(prev)
+    }
+    const startedAt = Date.now()
+    const entry = entriesRef.current.find((e) => e.id === id)
+    if (uid && entry) {
+      try {
+        const payload: TimerPersistPayload = {
+          v: 1,
+          authUserId: uid,
+          entryId: id,
+          startedAt,
+          snapshot: entry,
+        }
+        localStorage.setItem(timerStorageKey(uid), JSON.stringify(payload))
+      } catch {
+        /* quota */
+      }
+    }
+    setRunningTimer({ entryId: id, startedAt })
+  }
 
   const displayDays = viewMode === 'week' ? weekDays : [activeDay]
 
@@ -260,7 +938,7 @@ export function TimesheetPanel() {
 
   const hasEntries = dayGroups.length > 0
 
-  if (loading) return <TimesheetSkeleton />
+  if (bootLoading) return <TimesheetSkeleton />
 
   const headDate = viewMode === 'day'
     ? fmtDateHeading(activeDay)
@@ -270,6 +948,11 @@ export function TimesheetPanel() {
 
   return (
     <div className="tsp">
+      {entriesError && (
+        <div className="tsp__sync-err" role="alert">
+          {entriesError}
+        </div>
+      )}
 
       <div className="tsp__top">
         <div className="tsp__top-l">
@@ -404,7 +1087,13 @@ export function TimesheetPanel() {
                   )}
 <div className="tsp__rows">
                     {g.rows.map(e => {
-                      const isRun = running === e.id
+                      const isRun = runningTimer?.entryId === e.id
+                      const runningExtraMs =
+                        isRun && runningTimer ? Date.now() - runningTimer.startedAt : 0
+                      void timerTick
+                      const timeLabel = isRun
+                        ? formatClockFromMs(e.hours * 3_600_000 + runningExtraMs)
+                        : fmtHours(e.hours)
                       return (
                         <div key={e.id} className={`tsp__row${isRun ? ' tsp__row--run' : ''}`}>
 <span className="tsp__row-bar" style={{ background: e.color }} />
@@ -418,7 +1107,7 @@ export function TimesheetPanel() {
                             {e.notes && <p className="tsp__row-notes">{e.notes}</p>}
                           </div>
 <div className="tsp__row-acts">
-                            <span className="tsp__row-h">{fmtHours(e.hours)}</span>
+                            <span className="tsp__row-h">{timeLabel}</span>
                             <button
                               className={`tsp__row-start${isRun ? ' tsp__row-start--stop' : ''}`}
                               onClick={() => toggleRun(e.id)}
@@ -429,7 +1118,7 @@ export function TimesheetPanel() {
                               }
                             </button>
                             <button className="tsp__row-edit" onClick={() => openEdit(e)}>Изменить</button>
-                            <button className="tsp__row-del" onClick={() => deleteEntry(e.id)} aria-label="Удалить">
+                            <button className="tsp__row-del" onClick={() => void deleteEntry(e.id)} aria-label="Удалить">
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                                 <polyline points="3 6 5 6 21 6"/>
                                 <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M9 6V4h6v2"/>
@@ -478,6 +1167,10 @@ export function TimesheetPanel() {
           key={`${modal.date}_${modal.edit?.id ?? 'new'}`}
           entry={modal.edit}
           defaultDate={modal.date}
+          projects={projectsState.items}
+          projectsLoading={projectsState.loading}
+          projectsLoadError={projectsState.error}
+          tasksByClientId={tasksByClientId}
           onClose={closeModal}
           onSave={saveEntry}
         />

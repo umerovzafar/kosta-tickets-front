@@ -3,13 +3,15 @@ import { TimeTrackingClientsPanel } from './TimeTrackingClientsPanel'
 import { TimeTrackingClientTasksPanel } from './TimeTrackingClientTasksPanel'
 import { TimeTrackingClientExpenseCategoriesPanel } from './TimeTrackingClientExpenseCategoriesPanel'
 import { TimeTrackingClientProjectsPanel } from './TimeTrackingClientProjectsPanel'
+import { TimeTrackingProjectAccessPanel } from './TimeTrackingProjectAccessPanel'
 
-type SettingsTabId = 'clients' | 'tasks' | 'projects' | 'expense-categories'
+type SettingsTabId = 'clients' | 'tasks' | 'projects' | 'project-access' | 'expense-categories'
 
 const SETTINGS_TABS: { id: SettingsTabId; label: string }[] = [
   { id: 'clients', label: 'Клиенты' },
   { id: 'tasks', label: 'Задачи' },
   { id: 'projects', label: 'Проекты' },
+  { id: 'project-access', label: 'Доступ к проектам' },
   { id: 'expense-categories', label: 'Категории расходов' },
 ]
 
@@ -35,6 +37,7 @@ export function TimeTrackingSettingsPanel() {
 {activeTab === 'clients' && <TimeTrackingClientsPanel />}
 {activeTab === 'tasks' && <TimeTrackingClientTasksPanel />}
 {activeTab === 'projects' && <TimeTrackingClientProjectsPanel />}
+{activeTab === 'project-access' && <TimeTrackingProjectAccessPanel />}
 {activeTab === 'expense-categories' && <TimeTrackingClientExpenseCategoriesPanel />}
 
     </div>

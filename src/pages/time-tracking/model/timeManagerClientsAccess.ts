@@ -15,3 +15,15 @@ export function canManageTimeManagerClients(role: string | null | undefined): bo
   if (!rk) return false
   return MANAGE_ROLE_KEYS.has(rk)
 }
+
+/**
+ * Кто может менять список проектов с доступом у пользователя TT
+ * (`PUT .../users/{id}/project-access` на gateway — админы/партнёры или роль manager в учёте времени).
+ */
+export function canManageUserProjectAccess(
+  appRole: string | null | undefined,
+  timeTrackingRole: 'user' | 'manager' | null | undefined,
+): boolean {
+  if (canManageTimeManagerClients(appRole)) return true
+  return timeTrackingRole === 'manager'
+}
