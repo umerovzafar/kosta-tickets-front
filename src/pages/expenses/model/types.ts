@@ -22,13 +22,11 @@ export type ExpenseType =
 
 /** Подтип для `expenseType === 'partner_expense'` (уходит в API как `expenseSubtype`). */
 export type PartnerExpenseCategory =
-  | 'partner_office'
-  | 'partner_travel'
-  | 'partner_representation'
-  | 'partner_marketing'
-  | 'partner_professional'
-  | 'partner_equipment'
-  | 'partner_other'
+  | 'partner_fuel'
+  | 'partner_air'
+  | 'partner_meetings_food'
+  | 'partner_shop'
+  | 'partner_misc'
 
 export type PaymentMethod = 'cash' | 'card' | 'transfer' | 'other_payment'
 

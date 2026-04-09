@@ -12,13 +12,13 @@ import {
   EXPENSE_CURRENCIES,
   EXPENSE_TYPES,
   PARTNER_EXPENSE_CATEGORIES,
-  PARTNER_EXPENSE_CATEGORY_META,
+  getPartnerExpenseSubtypeLabel,
   PAYMENT_METHODS,
   STATUS_META,
 } from '../model/constants'
 import { computeUsdEquivalent, needsForeignUsdRate } from '../model/expenseCurrency'
 import { fetchCbuParsedForDate, foreignUnitsPerUsd, type CbuParsed } from '../model/cbuRates'
-import type { ExpenseAmountCurrency, PartnerExpenseCategory } from '../model/types'
+import type { ExpenseAmountCurrency } from '../model/types'
 import {
   approveExpense,
   rejectExpense,
@@ -111,9 +111,9 @@ type Props = {
   /** Из письма после входа: ?intent=approve|reject — обрабатывается один раз. */
   emailModerationIntent?: 'approve' | 'reject' | null
   onEmailModerationIntentConsumed?: () => void
-  /** Статус «Выплачено»: автор или модератор может прикрепить квитанцию об оплате (режим просмотра). */
+  /** Режим просмотра: можно загрузить квитанцию (автор или модератор; статусы см. isReceiptUploadAllowedForExpenseStatus). */
   allowPaymentReceiptUpload?: boolean
-  /** Загрузка выбранных квитанций на сервер (только при allowPaymentReceiptUpload). */
+  /** Загрузка выбранных квитанций на сервер из просмотра (кнопка в подвале панели). */
   onUploadPaymentReceipts?: (files: File[]) => Promise<void>
   receiptUploadPending?: boolean
   /** Текущий пользователь: контроль «своя заявка», отзыв. */
@@ -687,14 +687,12 @@ export function ExpensesFormPanel({
 
   const showAdditionalSection = useMemo(() => {
     if (values.isReimbursable === true) return true
-    if (isView) {
-      return (
-        Boolean(values.projectId?.trim()) ||
-        Boolean(values.vendor?.trim()) ||
-        Boolean(values.comment?.trim())
-      )
-    }
-    return false
+    if (!isView) return true
+    return (
+      Boolean(values.projectId?.trim()) ||
+      Boolean(values.vendor?.trim()) ||
+      Boolean(values.comment?.trim())
+    )
   }, [values.isReimbursable, values.projectId, values.vendor, values.comment, isView])
 
   const handleDeleteServerAttachment = useCallback(
@@ -1286,8 +1284,7 @@ export function ExpensesFormPanel({
                 {isView ? (
                   <p className="exp-form-static">
                     {values.expenseSubtype
-                      ? PARTNER_EXPENSE_CATEGORY_META[values.expenseSubtype as PartnerExpenseCategory]?.label ??
-                        values.expenseSubtype
+                      ? getPartnerExpenseSubtypeLabel(values.expenseSubtype) || values.expenseSubtype
                       : '—'}
                   </p>
                 ) : (
@@ -1472,10 +1469,16 @@ export function ExpensesFormPanel({
             </div>
           </div>
 
-          {/* Block 3: Дополнительно — при создании/редактировании только если возмещаемый; в просмотре — если есть данные */}
+          {/* Block 3: Дополнительно — всегда при возмещаемом; при невозмещаемом — в создании/редактировании (опционально); в просмотре — если есть сохранённые поля */}
           {showAdditionalSection && (
             <div className="exp-form-block">
               <p className="exp-form-block__title">Дополнительно</p>
+              {values.isReimbursable === false && (
+                <p className="exp-form-hint" style={{ margin: '-0.35rem 0 0.75rem 0' }}>
+                  Для <strong>невозмещаемого</strong> расхода эти поля по умолчанию не обязательны. Заполните проект,
+                  контрагента или комментарий, если так удобнее для внутреннего учёта или пояснения к заявке.
+                </p>
+              )}
               {values.isReimbursable === true && (
                 <p className="exp-form-hint" style={{ margin: '-0.35rem 0 0 0' }}>
                   Проект обязателен (справочник учёта времени). В «Контрагент / Поставщик» подставляется клиент проекта;
@@ -1631,7 +1634,7 @@ export function ExpensesFormPanel({
               <div className={`exp-form-field${errors.comment ? ' exp-form-field--err' : ''}`}>
                 <label className="exp-form-label">
                   Комментарий
-                  {values.expenseType === 'other' && (
+                  {values.expenseType === 'other' && values.isReimbursable === true && (
                     <span className="exp-form-req"> *</span>
                   )}
                 </label>
@@ -1651,64 +1654,63 @@ export function ExpensesFormPanel({
             </div>
           )}
 
-          {/* Block 4: Documents — документ для оплаты доступен и для невозмещаемых заявок */}
-          <div className="exp-form-block exp-form-block--docs">
-            <p className="exp-form-block__title">
-              Документы
-              {values.isReimbursable === true && !isView && (
-                <span className="exp-form-docs-badge">Нужен документ для оплаты</span>
-              )}
-            </p>
-            {!isView && (!editingRequest || editingRequest.status !== 'paid') && (
-              <p className="exp-form-hint" style={{ margin: '-0.5rem 0 0.25rem 0' }}>
-                {values.isReimbursable === true ? (
-                  <>
-                    <strong>Документ для оплаты</strong> — загрузите сразу (до отправки и до оплаты компанией).
-                    {' '}
-                    <strong>Квитанцию об оплате</strong> (подтверждение, что платёж прошёл) — после одобрения заявки и после статуса «Выплачено».
-                  </>
-                ) : (
-                  <>
-                    При необходимости прикрепите <strong>документ для оплаты</strong> (счёт, накладную и т.п.) — для любой заявки, в том числе невозмещаемой.
-                    {' '}
-                    <strong>Квитанцию об оплате</strong> — после статуса «Выплачено».
-                  </>
-                )}
-              </p>
-            )}
-            {fileSizeHint && (
-              <p className="exp-form-err-msg" role="status">{fileSizeHint}</p>
-            )}
-            {attachmentOpenErr && (
-              <p className="exp-form-err-msg" role="alert">{attachmentOpenErr}</p>
-            )}
+          {/* Документ для оплаты и отдельный блок подтверждения оплаты (квитанция) */}
+          {(() => {
+            const allAtt = editingRequest?.attachments ?? []
+            const serverPaymentDoc = allAtt.filter(a => a.attachmentKind === 'payment_document')
+            const serverReceipt = allAtt.filter(a => a.attachmentKind === 'payment_receipt')
+            const serverLegacy = allAtt.filter(a => !a.attachmentKind)
+            const showServerDelete = !isView && Boolean(onExpenseSnapshotUpdated)
+            const showPaymentDocSection = true
+            /** Квитанция: в редактировании/создании всегда; в просмотре — если есть файлы или разрешена загрузка. */
+            const showReceiptBlock =
+              !isView || serverReceipt.length > 0 || Boolean(allowPaymentReceiptUpload)
+            const showReceiptUploadZone = !isView || Boolean(allowPaymentReceiptUpload)
+            const showReceiptServerDelete =
+              Boolean(onExpenseSnapshotUpdated) && (!isView || allowPaymentReceiptUpload)
 
-            {(() => {
-              const allAtt = editingRequest?.attachments ?? []
-              const serverPaymentDoc = allAtt.filter(a => a.attachmentKind === 'payment_document')
-              const serverReceipt = allAtt.filter(a => a.attachmentKind === 'payment_receipt')
-              const serverLegacy = allAtt.filter(a => !a.attachmentKind)
-              const showServerDelete = !isView && Boolean(onExpenseSnapshotUpdated)
-              const showPaymentDocSection = true
-              /** Квитанция об оплате — после «Выплачено»; загрузка: автор или модератор (не своя заявка). */
-              const showReceiptBlock =
-                editingRequest?.status === 'paid' &&
-                (Boolean(allowPaymentReceiptUpload) || serverReceipt.length > 0)
-              const showReceiptUploadZone = Boolean(allowPaymentReceiptUpload)
-              const showReceiptServerDelete =
-                Boolean(onExpenseSnapshotUpdated) && (!isView || allowPaymentReceiptUpload)
+            const fileIcon = (
+              <svg className="exp-form-file-zone__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            )
 
-              const fileIcon = (
-                <svg className="exp-form-file-zone__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="17 8 12 3 7 8" />
-                  <line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
-              )
-
-              return (
+            return (
                 <>
-                  {showPaymentDocSection && (
+                  <div className="exp-form-block exp-form-block--docs">
+                    <p className="exp-form-block__title">
+                      Документы
+                      {values.isReimbursable === true && !isView && (
+                        <span className="exp-form-docs-badge">Нужен документ для оплаты</span>
+                      )}
+                    </p>
+                    {!isView && (!editingRequest || editingRequest.status !== 'paid') && (
+                      <p className="exp-form-hint" style={{ margin: '-0.5rem 0 0.25rem 0' }}>
+                        {values.isReimbursable === true ? (
+                          <>
+                            <strong>Документ для оплаты</strong> — загрузите сразу (до отправки и до оплаты компанией).
+                            {' '}
+                            Подтверждение оплаты (чек) — в блоке ниже; при необходимости можно прикрепить сразу или позже.
+                          </>
+                        ) : (
+                          <>
+                            При необходимости прикрепите <strong>документ для оплаты</strong> (счёт, накладную и т.п.) — для любой заявки, в том числе невозмещаемой.
+                            {' '}
+                            Квитанцию об оплате — в следующем блоке (по желанию сразу или после оплаты).
+                          </>
+                        )}
+                      </p>
+                    )}
+                    {fileSizeHint && (
+                      <p className="exp-form-err-msg" role="status">{fileSizeHint}</p>
+                    )}
+                    {attachmentOpenErr && (
+                      <p className="exp-form-err-msg" role="alert">{attachmentOpenErr}</p>
+                    )}
+
+                    {showPaymentDocSection && (
                   <div className={`exp-form-field${errors.attachmentsPaymentDoc ? ' exp-form-field--err' : ''}`}>
                     <label className="exp-form-label">Документ для оплаты</label>
                     {!isView && (
@@ -1809,14 +1811,34 @@ export function ExpensesFormPanel({
                     )}
                   </div>
                   )}
+                  </div>
 
-                  {showReceiptBlock && (
+                  <div className="exp-form-block exp-form-block--docs exp-form-block--payment-confirm">
+                    <p className="exp-form-block__title">Подтверждение оплаты</p>
+                    {!showReceiptBlock && (
+                      <>
+                        {editingRequest?.status === 'paid' ? (
+                          <p className="exp-form-static exp-form-static--muted" style={{ margin: 0 }}>
+                            Квитанция об оплате не приложена.
+                          </p>
+                        ) : (
+                          <p className="exp-form-static exp-form-static--muted" style={{ margin: 0 }}>
+                            Прикрепить квитанцию может автор заявки или модератор, если статус и права это допускают.
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    {showReceiptBlock && (
                   <div className={`exp-form-field${errors.attachmentsReceipt ? ' exp-form-field--err' : ''}`}>
                     <label className="exp-form-label">Квитанция об оплате</label>
                     {showReceiptUploadZone && (
                       <>
                         <p className="exp-form-static exp-form-static--muted" style={{ margin: '0 0 0.5rem 0' }}>
-                          Подтверждение факта платежа. Загрузить может автор заявки или модератор после статуса «Выплачено».
+                          Чек, скрин или выписка о факте оплаты. Можно прикрепить заранее или после статуса «Выплачено».
+                          {!isView
+                            ? ' Файлы уйдут на сервер вместе с сохранением черновика или отправкой заявки.'
+                            : ' Загрузить может автор заявки или модератор.'}
                         </p>
                         <div
                           className="exp-form-file-zone"
@@ -1916,6 +1938,7 @@ export function ExpensesFormPanel({
                     )}
                   </div>
                   )}
+                  </div>
 
                   {serverLegacy.length > 0 && (
                     <div className="exp-form-field">
@@ -1952,14 +1975,9 @@ export function ExpensesFormPanel({
                       </ul>
                     </div>
                   )}
-
-                  {isView && editingRequest && allAtt.length === 0 && !showReceiptBlock && (
-                    <p className="exp-form-no-files">Документы не прикреплены</p>
-                  )}
                 </>
               )
             })()}
-          </div>
         </div>
 
         {/* Footer */}

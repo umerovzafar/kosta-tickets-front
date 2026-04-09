@@ -9,6 +9,18 @@ export function resolveExpensePanelMode(status: ExpenseStatus): 'edit' | 'view' 
   return status === 'draft' || status === 'revision_required' ? 'edit' : 'view'
 }
 
+/** Статусы, в которых автор или модератор может загрузить квитанцию об оплате из просмотра (в т.ч. до «Выплачено»). */
+const RECEIPT_UPLOAD_ALLOWED_STATUSES: ReadonlySet<ExpenseStatus> = new Set([
+  'pending_approval',
+  'approved',
+  'paid',
+  'not_reimbursable',
+])
+
+export function isReceiptUploadAllowedForExpenseStatus(status: ExpenseStatus): boolean {
+  return RECEIPT_UPLOAD_ALLOWED_STATUSES.has(status)
+}
+
 export function isExpenseAuthor(currentUserId: number | null | undefined, expense: ExpenseRequest): boolean {
   if (currentUserId == null) return false
   return currentUserId === expense.createdByUserId

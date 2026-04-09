@@ -11,7 +11,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
+  Area,
+  ComposedChart,
 } from 'recharts'
 import { routes } from '@shared/config'
 import { ExpensesShell } from './ExpensesShell'
@@ -42,7 +43,55 @@ import './ExpensesPage.css'
 
 const LS_COLUMNS = 'kl-expenses-report-columns-v1'
 
-const CHART_COLORS = ['#4f46e5', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#0ea5e9', '#94a3b8']
+const CHART_COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#94a3b8']
+
+const CHART_GRADIENT_ID = 'expRepAreaGrad'
+
+function formatMonthRu(isoYm: string): string {
+  const [y, m] = isoYm.split('-').map(Number)
+  if (!y || !m) return isoYm
+  const d = new Date(y, m - 1, 1)
+  return d.toLocaleDateString('ru-RU', { month: 'short', year: 'numeric' })
+}
+
+function formatUzsCompact(n: number): string {
+  if (!Number.isFinite(n)) return '—'
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')} млрд`
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')} млн`
+  if (abs >= 1_000) return `${Math.round(n / 1_000)} тыс`
+  return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+}
+
+type TooltipPayload = { name?: string; value?: number; color?: string; dataKey?: string }
+
+function ReportChartTooltip({
+  active,
+  label,
+  payload,
+}: {
+  active?: boolean
+  label?: string
+  payload?: TooltipPayload[]
+}) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="exp-report-chart-tooltip">
+      {label != null && label !== '' && <div className="exp-report-chart-tooltip__title">{label}</div>}
+      <ul className="exp-report-chart-tooltip__list">
+        {payload.map((p, i) => (
+          <li key={`${p.dataKey ?? i}`} className="exp-report-chart-tooltip__row">
+            <span className="exp-report-chart-tooltip__dot" style={{ background: p.color }} />
+            <span className="exp-report-chart-tooltip__name">{p.name ?? p.dataKey}</span>
+            <span className="exp-report-chart-tooltip__val">
+              {typeof p.value === 'number' ? `${p.value.toLocaleString('ru-RU')} UZS` : p.value}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 const STATUS_OPTIONS = (Object.keys(STATUS_META) as ExpenseStatus[]).map(s => ({
   value: s,
@@ -273,6 +322,40 @@ export function ExpensesReportPage() {
     return keys.map(k => ({ month: k, uzs: m.get(k) ?? 0 }))
   }, [filteredItems])
 
+  const byMonthLabeled = useMemo(
+    () => byMonth.map(row => ({ ...row, label: formatMonthRu(row.month) })),
+    [byMonth],
+  )
+
+  const byPayment = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of filteredItems) {
+      const raw = (r.paymentMethod ?? 'other_payment') as PaymentMethod
+      const label = PAYMENT_METHODS.find(p => p.value === raw)?.label ?? raw
+      m.set(label, (m.get(label) ?? 0) + asExpenseNumber(r.amountUzs))
+    }
+    return [...m.entries()].map(([name, value]) => ({ name, value }))
+  }, [filteredItems])
+
+  const byTypeRanked = useMemo(
+    () => [...byType].sort((a, b) => b.value - a.value).slice(0, 10),
+    [byType],
+  )
+
+  const pieStyled = useMemo(
+    () =>
+      byType.map((d, i) => ({
+        ...d,
+        fill: CHART_COLORS[i % CHART_COLORS.length],
+      })),
+    [byType],
+  )
+
+  const byStatusSorted = useMemo(
+    () => [...byStatus].sort((a, b) => b.value - a.value),
+    [byStatus],
+  )
+
   const totals = useMemo(
     () =>
       filteredItems.reduce(
@@ -343,14 +426,21 @@ export function ExpensesReportPage() {
   return (
     <ExpensesShell title="Отчёты и аналитика">
       <div className="exp-report-page">
-        <header className="exp-report-hero">
-          <p className="exp-report-hero__eyebrow">Расходы компании</p>
-          <h2 className="exp-report-hero__title">Аналитика, графики и выгрузка в Excel</h2>
-          <p className="exp-report-hero__text">
-            Сначала задаётся <strong>период загрузки</strong> с сервера (чтобы не тянуть весь архив за раз). Затем{' '}
-            <strong>фильтры отчёта</strong> уточняют выборку для графиков, таблицы и файлов. Все выгрузки только в формате{' '}
-            <strong>.xlsx</strong> (Microsoft Excel).
-          </p>
+        <header className="exp-report-hero exp-report-hero--visual">
+          <div className="exp-report-hero__grid">
+            <div className="exp-report-hero__copy">
+              <p className="exp-report-hero__eyebrow">Расходы компании</p>
+              <h2 className="exp-report-hero__title">Аналитика и визуализация</h2>
+              <p className="exp-report-hero__text">
+                Живая панель графиков по выбранным заявкам: структура расходов, статусы, способы оплаты и динамика по
+                месяцам. Ниже — фильтры, Excel <strong>.xlsx</strong> и таблица-превью.
+              </p>
+            </div>
+            <div className="exp-report-hero__accent" aria-hidden>
+              <div className="exp-report-hero__orb exp-report-hero__orb--a" />
+              <div className="exp-report-hero__orb exp-report-hero__orb--b" />
+            </div>
+          </div>
         </header>
 
         <div className="exp-report-nav">
@@ -362,13 +452,13 @@ export function ExpensesReportPage() {
           </NavLink>
         </div>
 
-        <section className="exp-report-panel" aria-labelledby="exp-report-load-title">
+        <section className="exp-report-panel exp-report-panel--compact" aria-labelledby="exp-report-load-title">
           <h3 id="exp-report-load-title" className="exp-report-panel__title">
-            1. Загрузка данных с сервера
+            Источник данных
           </h3>
           <p className="exp-report-panel__hint">
-            Выбор периода влияет на запрос к API. Внутри этого набора работают фильтры ниже. Сейчас:{' '}
-            <strong>{periodDescription(period)}</strong>.
+            Период запроса к API. Сейчас: <strong>{periodDescription(period)}</strong>. Фильтры ниже уточняют выборку на
+            клиенте.
           </p>
           <div className="exp-report-toolbar">
             <div className="exp-report-toolbar__period">
@@ -404,13 +494,229 @@ export function ExpensesReportPage() {
           </div>
         </section>
 
+        {error && (
+          <div className="exp-error-banner" role="alert">
+            {error}
+          </div>
+        )}
+
+        <div className="exp-report-kpi-strip" aria-label="Ключевые показатели">
+          <div className="exp-report-stats exp-report-stats--4 exp-report-stats--kpi">
+            <div className="exp-report-stat-card exp-report-stat-card--kpi">
+              <span className="exp-report-stat-card__label">Заявок в выборке</span>
+              <span className="exp-report-stat-card__value">
+                {loading ? '…' : filteredItems.length.toLocaleString('ru-RU')}
+              </span>
+              <span className="exp-report-stat-card__sub">
+                {loading ? '' : `из ${items.length.toLocaleString('ru-RU')} загруженных`}
+              </span>
+            </div>
+            <div className="exp-report-stat-card exp-report-stat-card--kpi exp-report-stat-card--accent">
+              <span className="exp-report-stat-card__label">Сумма, UZS</span>
+              <span className="exp-report-stat-card__value">
+                {loading ? '…' : formatUzsCompact(totals.uzs)}
+              </span>
+              <span className="exp-report-stat-card__sub">
+                {loading ? '' : totals.uzs.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="exp-report-stat-card exp-report-stat-card--kpi">
+              <span className="exp-report-stat-card__label">Эквивалент, USD</span>
+              <span className="exp-report-stat-card__value">{loading ? '…' : totals.usd.toFixed(2)}</span>
+            </div>
+            <div className="exp-report-stat-card exp-report-stat-card--kpi">
+              <span className="exp-report-stat-card__label">Возмещаемые</span>
+              <span className="exp-report-stat-card__value">{loading ? '…' : `${reimbPct}%`}</span>
+            </div>
+          </div>
+        </div>
+
+        <section className="exp-report-analytics" aria-labelledby="exp-report-analytics-title">
+          <div className="exp-report-analytics__head">
+            <h2 id="exp-report-analytics-title" className="exp-report-analytics__title">
+              Панель графиков
+            </h2>
+            <p className="exp-report-analytics__lead">
+              {loading
+                ? 'Загружаем данные…'
+                : filteredItems.length === 0
+                  ? 'Нет строк под фильтры — ослабьте условия или обновите период загрузки.'
+                  : `Визуализация по ${filteredItems.length.toLocaleString('ru-RU')} заявкам (UZS). Наведите на элементы для точных сумм.`}
+            </p>
+          </div>
+
+          {loading && (
+            <div className="exp-report-analytics__skeleton" aria-hidden>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="exp-report-skel-card" />
+              ))}
+            </div>
+          )}
+
+          {!loading && filteredItems.length > 0 && (
+            <div className="exp-report-analytics__grid">
+              <div className="exp-report-chart-card exp-report-chart-card--glass">
+                <h3 className="exp-report-chart-card__title">Структура по типам</h3>
+                <p className="exp-report-chart-card__subtitle">Доля суммы, UZS</p>
+                <div className="exp-report-chart-card__plot exp-report-chart-card__plot--pie">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={pieStyled}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="48%"
+                        innerRadius={58}
+                        outerRadius={92}
+                        paddingAngle={2}
+                        label={({ name, percent }) =>
+                          percent != null && percent >= 0.05 ? `${name} · ${Math.round(percent * 100)}%` : ''
+                        }
+                        labelLine={{ stroke: 'var(--app-border, #cbd5e1)' }}
+                      >
+                        {pieStyled.map(entry => (
+                          <Cell key={entry.name} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ReportChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="exp-report-chart-card exp-report-chart-card--glass">
+                <h3 className="exp-report-chart-card__title">Топ категорий</h3>
+                <p className="exp-report-chart-card__subtitle">Сумма UZS по типу</p>
+                <div className="exp-report-chart-card__plot">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      layout="vertical"
+                      data={byTypeRanked}
+                      margin={{ top: 8, right: 16, left: 4, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border, #e2e8f0)" horizontal />
+                      <XAxis
+                        type="number"
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={v => (typeof v === 'number' ? formatUzsCompact(v) : '')}
+                      />
+                      <YAxis type="category" dataKey="name" width={118} tick={{ fontSize: 11 }} />
+                      <Tooltip content={<ReportChartTooltip />} />
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                        {byTypeRanked.map((_, i) => (
+                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="exp-report-chart-card exp-report-chart-card--glass exp-report-chart-card--span2">
+                <h3 className="exp-report-chart-card__title">Динамика по месяцам</h3>
+                <p className="exp-report-chart-card__subtitle">Нарастающий объём по дате расхода</p>
+                <div className="exp-report-chart-card__plot exp-report-chart-card__plot--trend">
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ComposedChart data={byMonthLabeled} margin={{ top: 16, right: 20, left: 4, bottom: 8 }}>
+                      <defs>
+                        <linearGradient id={CHART_GRADIENT_ID} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.45} />
+                          <stop offset="100%" stopColor="#6366f1" stopOpacity={0.04} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border, #e2e8f0)" />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={v => (typeof v === 'number' ? formatUzsCompact(v) : '')}
+                      />
+                      <Tooltip content={<ReportChartTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="uzs"
+                        stroke="#4f46e5"
+                        strokeWidth={2.5}
+                        fill={`url(#${CHART_GRADIENT_ID})`}
+                        dot={{ r: 3, fill: '#4f46e5', strokeWidth: 0 }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="exp-report-chart-card exp-report-chart-card--glass">
+                <h3 className="exp-report-chart-card__title">По статусам</h3>
+                <p className="exp-report-chart-card__subtitle">UZS</p>
+                <div className="exp-report-chart-card__plot">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      layout="vertical"
+                      data={byStatusSorted}
+                      margin={{ top: 8, right: 16, left: 4, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border, #e2e8f0)" horizontal />
+                      <XAxis
+                        type="number"
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={v => (typeof v === 'number' ? formatUzsCompact(v) : '')}
+                      />
+                      <YAxis type="category" dataKey="name" width={108} tick={{ fontSize: 10 }} />
+                      <Tooltip content={<ReportChartTooltip />} />
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                        {byStatusSorted.map((_, i) => (
+                          <Cell key={i} fill={CHART_COLORS[(i + 2) % CHART_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="exp-report-chart-card exp-report-chart-card--glass">
+                <h3 className="exp-report-chart-card__title">Способ оплаты</h3>
+                <p className="exp-report-chart-card__subtitle">UZS</p>
+                <div className="exp-report-chart-card__plot">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={byPayment} margin={{ top: 8, right: 12, left: 4, bottom: 64 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border, #e2e8f0)" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 10 }}
+                        interval={0}
+                        angle={-20}
+                        textAnchor="end"
+                        height={58}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={v => (typeof v === 'number' ? formatUzsCompact(v) : '')}
+                      />
+                      <Tooltip content={<ReportChartTooltip />} />
+                      <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                        {byPayment.map((_, i) => (
+                          <Cell key={i} fill={CHART_COLORS[(i + 4) % CHART_COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
         <section className="exp-report-panel" aria-labelledby="exp-report-filters-title">
           <h3 id="exp-report-filters-title" className="exp-report-panel__title">
-            2. Фильтры отчёта (дата расхода, тип, статус…)
+            Фильтры отчёта
           </h3>
           <p className="exp-report-panel__hint">
-            Совпадают с логикой окна «Отчёт Excel» на реестре. Полный Excel-файл использует эти параметры; графики и
-            превью-таблица показывают уже отфильтрованные строки ({filteredItems.length} из {items.length} загруженных).
+            Как в окне «Отчёт Excel» на реестре. Сейчас в выборке{' '}
+            <strong>
+              {filteredItems.length} из {items.length}
+            </strong>{' '}
+            загруженных строк.
           </p>
 
           <div className="exp-report-filters">
@@ -576,12 +882,12 @@ export function ExpensesReportPage() {
 
         <section className="exp-report-panel exp-report-panel--excel" aria-labelledby="exp-report-excel-title">
           <h3 id="exp-report-excel-title" className="exp-report-panel__title">
-            3. Выгрузка в Excel (.xlsx)
+            Выгрузка в Excel (.xlsx)
           </h3>
           <p className="exp-report-panel__hint">
             <strong>Полный отчёт</strong> — два листа: детальная таблица (все колонки, как в модальном окне на реестре) и
             сводка по типам / статусам / возмещаемости. <strong>Таблица с выбранными столбцами</strong> — один лист по
-            настройкам из раздела 4 ниже.
+            настройкам таблицы ниже.
           </p>
           <div className="exp-report-excel-actions">
             <button
@@ -608,146 +914,14 @@ export function ExpensesReportPage() {
           )}
         </section>
 
-        {error && (
-          <div className="exp-error-banner" role="alert">
-            {error}
-          </div>
-        )}
-
-        <section className="exp-report-panel" aria-labelledby="exp-report-kpi-title">
-          <h3 id="exp-report-kpi-title" className="exp-report-panel__title">
-            Сводка по отфильтрованным заявкам
-          </h3>
-          <div className="exp-report-stats exp-report-stats--4">
-            <div className="exp-report-stat-card">
-              <span className="exp-report-stat-card__label">Заявок</span>
-              <span className="exp-report-stat-card__value">
-                {loading ? '…' : filteredItems.length.toLocaleString('ru-RU')}
-              </span>
-            </div>
-            <div className="exp-report-stat-card">
-              <span className="exp-report-stat-card__label">Сумма, UZS</span>
-              <span className="exp-report-stat-card__value">
-                {loading ? '…' : totals.uzs.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-            <div className="exp-report-stat-card">
-              <span className="exp-report-stat-card__label">Эквивалент, USD</span>
-              <span className="exp-report-stat-card__value">{loading ? '…' : totals.usd.toFixed(2)}</span>
-            </div>
-            <div className="exp-report-stat-card">
-              <span className="exp-report-stat-card__label">Доля возмещаемых</span>
-              <span className="exp-report-stat-card__value">{loading ? '…' : `${reimbPct}%`}</span>
-            </div>
-          </div>
-        </section>
-
         {!loading && filteredItems.length === 0 && !error && (
           <p className="exp-report-empty">Нет заявок, подходящих под текущие фильтры.</p>
-        )}
-
-        {!loading && filteredItems.length > 0 && (
-          <section className="exp-report-section" aria-labelledby="exp-report-charts-title">
-            <h2 id="exp-report-charts-title" className="exp-report-section__title">
-              Графики (по отфильтрованным данным)
-            </h2>
-            <div className="exp-report-charts">
-              <div className="exp-report-chart-card">
-                <h3 className="exp-report-chart-card__title">По типам расхода (UZS)</h3>
-                <div className="exp-report-chart-card__plot">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <PieChart>
-                      <Pie
-                        data={byType}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={52}
-                        outerRadius={88}
-                        paddingAngle={2}
-                      >
-                        {byType.map((_, i) => (
-                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(v: number | undefined) =>
-                          typeof v === 'number' ? v.toLocaleString('ru-RU') : ''
-                        }
-                      />
-                      <Legend layout="horizontal" verticalAlign="bottom" />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="exp-report-chart-card">
-                <h3 className="exp-report-chart-card__title">По статусам (UZS)</h3>
-                <div className="exp-report-chart-card__plot">
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={byStatus} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border, #e2e8f0)" />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        interval={0}
-                        angle={-18}
-                        textAnchor="end"
-                        height={70}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={v =>
-                          typeof v === 'number' && Math.abs(v) >= 1_000_000
-                            ? `${v / 1_000_000}M`
-                            : String(v ?? '')
-                        }
-                      />
-                      <Tooltip
-                        formatter={(v: number | undefined) =>
-                          typeof v === 'number' ? v.toLocaleString('ru-RU') : ''
-                        }
-                      />
-                      <Bar dataKey="value" fill="var(--app-accent, #4f46e5)" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="exp-report-chart-card exp-report-chart-card--wide">
-                <h3 className="exp-report-chart-card__title">Динамика по месяцам (UZS)</h3>
-                <div className="exp-report-chart-card__plot">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={byMonth} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--app-border, #e2e8f0)" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                      <YAxis
-                        tick={{ fontSize: 11 }}
-                        tickFormatter={v =>
-                          typeof v === 'number' && Math.abs(v) >= 1_000_000
-                            ? `${v / 1_000_000}M`
-                            : String(v ?? '')
-                        }
-                      />
-                      <Tooltip
-                        formatter={(v: number | undefined) =>
-                          typeof v === 'number' ? v.toLocaleString('ru-RU') : ''
-                        }
-                      />
-                      <Bar dataKey="uzs" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-          </section>
         )}
 
         <section className="exp-report-section" aria-labelledby="exp-report-table-title">
           <div className="exp-report-section__head">
             <h2 id="exp-report-table-title" className="exp-report-section__title">
-              4. Конструктор таблицы (превью + Excel)
+              Таблица и столбцы Excel
             </h2>
             <p className="exp-report-section__lead">
               Отметьте столбцы для превью и для кнопки «Скачать Excel: выбранные столбцы». Набор столбцов сохраняется в

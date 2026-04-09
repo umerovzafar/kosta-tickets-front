@@ -70,23 +70,39 @@ export const EXPENSE_CURRENCIES: { value: ExpenseAmountCurrency; label: string }
 ]
 
 export const PARTNER_EXPENSE_CATEGORY_META: Record<PartnerExpenseCategory, { label: string }> = {
-  partner_office:         { label: 'Офис и административные расходы' },
-  partner_travel:         { label: 'Командировки и проезд' },
-  partner_representation: { label: 'Представительские' },
-  partner_marketing:      { label: 'Маркетинг и PR' },
-  partner_professional:   { label: 'Профессиональные услуги' },
-  partner_equipment:      { label: 'IT и оборудование' },
-  partner_other:          { label: 'Прочее' },
+  partner_fuel: { label: 'Заправка' },
+  partner_air: { label: 'авиабилеты' },
+  partner_meetings_food: { label: 'встречи (рестораны, еда)' },
+  partner_shop: { label: 'покупки (shop)' },
+  partner_misc: { label: 'разное' },
+}
+
+/** Старые коды подтипа (до смены справочника) — только для отображения уже сохранённых заявок. */
+const LEGACY_PARTNER_EXPENSE_LABELS: Record<string, string> = {
+  partner_office: 'Офис и административные расходы',
+  partner_travel: 'Командировки и проезд',
+  partner_representation: 'Представительские',
+  partner_marketing: 'Маркетинг и PR',
+  partner_professional: 'Профессиональные услуги',
+  partner_equipment: 'IT и оборудование',
+  partner_other: 'Прочее',
+}
+
+export function getPartnerExpenseSubtypeLabel(subtype: string | null | undefined): string {
+  const s = (subtype ?? '').trim()
+  if (!s) return ''
+  if (Object.prototype.hasOwnProperty.call(PARTNER_EXPENSE_CATEGORY_META, s)) {
+    return PARTNER_EXPENSE_CATEGORY_META[s as PartnerExpenseCategory].label
+  }
+  return LEGACY_PARTNER_EXPENSE_LABELS[s] ?? s
 }
 
 export const PARTNER_EXPENSE_CATEGORIES: { value: PartnerExpenseCategory; label: string }[] = [
-  { value: 'partner_office',         label: 'Офис и административные расходы' },
-  { value: 'partner_travel',         label: 'Командировки и проезд' },
-  { value: 'partner_representation', label: 'Представительские' },
-  { value: 'partner_marketing',      label: 'Маркетинг и PR' },
-  { value: 'partner_professional',   label: 'Профессиональные услуги' },
-  { value: 'partner_equipment',      label: 'IT и оборудование' },
-  { value: 'partner_other',          label: 'Прочее' },
+  { value: 'partner_fuel', label: PARTNER_EXPENSE_CATEGORY_META.partner_fuel.label },
+  { value: 'partner_air', label: PARTNER_EXPENSE_CATEGORY_META.partner_air.label },
+  { value: 'partner_meetings_food', label: PARTNER_EXPENSE_CATEGORY_META.partner_meetings_food.label },
+  { value: 'partner_shop', label: PARTNER_EXPENSE_CATEGORY_META.partner_shop.label },
+  { value: 'partner_misc', label: PARTNER_EXPENSE_CATEGORY_META.partner_misc.label },
 ]
 
 export const EXPENSE_TYPES: { value: ExpenseType; label: string }[] = [

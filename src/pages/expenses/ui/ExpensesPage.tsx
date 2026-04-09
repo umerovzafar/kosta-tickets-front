@@ -15,14 +15,13 @@ import type {
   ExpenseStatus,
   ExpenseType,
   ExpenseCreatedBy,
-  PartnerExpenseCategory,
 } from '../model/types'
 import {
   EXPENSE_REGISTRY_STATUSES,
   EXPENSE_REGISTRY_STATUS_SET,
   STATUS_META,
   TYPE_META,
-  PARTNER_EXPENSE_CATEGORY_META,
+  getPartnerExpenseSubtypeLabel,
   REIMBURSABLE_META,
 } from '../model/constants'
 import {
@@ -51,6 +50,7 @@ import { canViewExpensesRequestsAndReport } from '../model/expenseModeration'
 import {
   getCloseExpenseUi,
   isModerationBlockedForOwnExpense,
+  isReceiptUploadAllowedForExpenseStatus,
   showOwnPendingModerationBlockedHint,
   resolveExpensePanelMode,
   showPayExpenseAction,
@@ -188,7 +188,7 @@ function ExpenseCard({
   const typeLabel = TYPE_META[req.expenseType as ExpenseType]?.label ?? req.expenseType
   const partnerSubtypeLabel =
     req.expenseType === 'partner_expense' && req.expenseSubtype
-      ? PARTNER_EXPENSE_CATEGORY_META[req.expenseSubtype as PartnerExpenseCategory]?.label ?? req.expenseSubtype
+      ? getPartnerExpenseSubtypeLabel(req.expenseSubtype) || req.expenseSubtype
       : null
   const reimbLabel = req.isReimbursable
     ? REIMBURSABLE_META['reimbursable'].label
@@ -932,6 +932,9 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       for (const file of filesByKind.payment_document) {
         last = await uploadAttachment(last.id, file, 'payment_document')
       }
+      for (const file of filesByKind.payment_receipt) {
+        last = await uploadAttachment(last.id, file, 'payment_receipt')
+      }
       setRequests(prev =>
         editingReq
           ? prev.map(r => r.id === last.id ? last : r)
@@ -962,6 +965,9 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
       let last: ExpenseRequest = saved
       for (const file of filesByKind.payment_document) {
         last = await uploadAttachment(last.id, file, 'payment_document')
+      }
+      for (const file of filesByKind.payment_receipt) {
+        last = await uploadAttachment(last.id, file, 'payment_receipt')
       }
       const submitted = await submitExpense(last.id)
       setRequests(prev =>
@@ -1011,10 +1017,10 @@ function ExpensesPageInner({ variant = 'default' }: ExpensesPageProps) {
     }
   }, [editingReq, authorCache])
 
-  /** Квитанция об оплате — после «Выплачено»: автор или модератор (не по своей заявке). */
+  /** Квитанция об оплате: автор или модератор (не по своей заявке) в статусах до/включая оплату см. isReceiptUploadAllowedForExpenseStatus. */
   const allowPaymentReceiptUpload = useMemo(() => {
     if (!editingReq || user == null) return false
-    if (editingReq.status !== 'paid') return false
+    if (!isReceiptUploadAllowedForExpenseStatus(editingReq.status)) return false
     if (user.id === editingReq.createdByUserId) return true
     if (!canModerate) return false
     return !isModerationBlockedForOwnExpense(canModerate, user.id, editingReq)
