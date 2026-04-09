@@ -5,6 +5,12 @@ import type { AttendanceRecord } from '@entities/attendance'
 import type { AdminMetrics, LateMetrics } from './types'
 import type { TTRole, TTPosition } from './constants'
 
+/** Ожидание подтверждения смены роли или учёта времени в админке. */
+export type AdminUserFieldPendingConfirm =
+  | null
+  | { kind: 'role'; user: User; newRole: string }
+  | { kind: 'tt'; user: User; newTtRole: TTRole }
+
 export type AdminContextValue = {
   isCollapsed: boolean
   isMobileOpen: boolean
@@ -32,6 +38,9 @@ export type AdminContextValue = {
   handleRoleChange: (u: User, roleValue: string) => void
   handleTTRoleChange: (u: User, ttRole: TTRole) => void
   handlePositionChange: (u: User, pos: TTPosition | null) => void
+  pendingUserFieldChange: AdminUserFieldPendingConfirm
+  confirmPendingUserFieldChange: () => Promise<void>
+  dismissPendingUserFieldChange: () => void
 
   openRoleDropdown: number | null
   setOpenRoleDropdown: (v: number | null) => void

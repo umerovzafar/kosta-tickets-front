@@ -9,6 +9,7 @@ import {
   type User,
 } from '@entities/user'
 import type { AdminMetrics } from '../types'
+import type { AdminUserFieldPendingConfirm } from '../AdminContext.types'
 import type { TTRole, TTPosition } from '../constants'
 
 type ClosePosDropdown = () => void
@@ -22,6 +23,7 @@ export function useAdminUsers(closePosDropdown: ClosePosDropdown) {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [userActionError, setUserActionError] = useState<string | null>(null)
   const [savingUserId, setSavingUserId] = useState<number | null>(null)
+  const [pendingUserFieldChange, setPendingUserFieldChange] = useState<AdminUserFieldPendingConfirm>(null)
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -93,12 +95,29 @@ export function useAdminUsers(closePosDropdown: ClosePosDropdown) {
   }, [applyUserUpdate])
 
   const handleRoleChange = useCallback((u: User, roleValue: string) => {
-    applyUserUpdate(u, () => setUserRole(u.id, roleValue))
-  }, [applyUserUpdate])
+    if ((u.role || '').trim() === roleValue.trim()) return
+    setPendingUserFieldChange({ kind: 'role', user: u, newRole: roleValue })
+  }, [])
 
   const handleTTRoleChange = useCallback((u: User, ttRole: TTRole) => {
-    applyUserUpdate(u, () => setTimeTrackingRole(u.id, ttRole))
-  }, [applyUserUpdate])
+    if (u.time_tracking_role === ttRole) return
+    setPendingUserFieldChange({ kind: 'tt', user: u, newTtRole: ttRole })
+  }, [])
+
+  const dismissPendingUserFieldChange = useCallback(() => {
+    setPendingUserFieldChange(null)
+  }, [])
+
+  const confirmPendingUserFieldChange = useCallback(async () => {
+    const snap = pendingUserFieldChange
+    if (!snap) return
+    if (snap.kind === 'role') {
+      await applyUserUpdate(snap.user, () => setUserRole(snap.user.id, snap.newRole))
+    } else {
+      await applyUserUpdate(snap.user, () => setTimeTrackingRole(snap.user.id, snap.newTtRole))
+    }
+    setPendingUserFieldChange(null)
+  }, [pendingUserFieldChange, applyUserUpdate])
 
   const handlePositionChange = useCallback((u: User, pos: TTPosition | null) => {
     applyUserUpdate(u, () => setUserPosition(u.id, pos))
@@ -125,5 +144,8 @@ export function useAdminUsers(closePosDropdown: ClosePosDropdown) {
     handleRoleChange,
     handleTTRoleChange,
     handlePositionChange,
+    pendingUserFieldChange,
+    confirmPendingUserFieldChange,
+    dismissPendingUserFieldChange,
   }
 }

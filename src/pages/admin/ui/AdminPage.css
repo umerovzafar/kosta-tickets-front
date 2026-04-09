@@ -1803,6 +1803,16 @@ body[data-theme='dark'] .ap__kpi-card--violet .ap__kpi-icon {
   padding: 0.75rem;
 }
 
+.ap__modal-desc--confirm {
+  margin-bottom: 0.75rem;
+  color: var(--app-text);
+}
+
+.ap__modal-val--accent {
+  font-weight: 600;
+  color: var(--app-accent, #4f46e5);
+}
+
 .ap__modal-foot {
   margin-top: 1rem;
   padding-top: 0.75rem;

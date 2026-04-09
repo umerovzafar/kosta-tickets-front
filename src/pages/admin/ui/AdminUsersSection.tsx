@@ -1,6 +1,7 @@
 import { useAdmin } from '../model/AdminContext'
 import { AdminSelect } from './AdminSelect'
 import { UserCard } from './UserCard'
+import { UserFieldChangeConfirmModal } from './UserFieldChangeConfirmModal'
 import { KNOWN_ROLES } from '../model/constants'
 
 export function AdminUsersSection() {
@@ -21,6 +22,9 @@ export function AdminUsersSection() {
     handleRoleChange,
     handleTTRoleChange,
     handlePositionChange,
+    pendingUserFieldChange,
+    confirmPendingUserFieldChange,
+    dismissPendingUserFieldChange,
     openRoleDropdown,
     setOpenRoleDropdown,
     roleMenuPos,
@@ -126,6 +130,14 @@ export function AdminUsersSection() {
           />
         ))}
       </div>
+
+      <UserFieldChangeConfirmModal
+        pending={pendingUserFieldChange}
+        ttRoleOptions={TT_ROLE_OPTIONS}
+        savingUserId={savingUserId}
+        onConfirm={confirmPendingUserFieldChange}
+        onDismiss={dismissPendingUserFieldChange}
+      />
     </section>
   )
 }
