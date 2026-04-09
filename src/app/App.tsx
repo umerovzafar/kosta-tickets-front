@@ -65,6 +65,7 @@ export function App() {
   const [startupError, setStartupError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!fontsReady) return
     if (!isAuthenticated()) return
     if (startupStatus !== StartupStatus.Idle) return
 
@@ -81,7 +82,7 @@ export function App() {
         setStartupError(e instanceof Error ? e.message : DEFAULT_ERROR_MESSAGE)
         setStartupStatus(StartupStatus.Error)
       })
-  }, [startupStatus])
+  }, [fontsReady, startupStatus])
 
   const handleRetry = () => {
     setStartupError(null)

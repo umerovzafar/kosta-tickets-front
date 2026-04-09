@@ -2,7 +2,7 @@ import { apiFetch } from '@shared/api'
 import type { User, MicrosoftUser } from './model/types'
 
 export async function getMe(): Promise<User> {
-  const res = await apiFetch('/api/v1/users/me')
+  const res = await apiFetch('/api/v1/users/me', { skipAuthRedirectOn401: true })
   if (res.status === 401) throw new Error('Не авторизован')
   if (!res.ok) throw new Error('Не удалось загрузить профиль')
   return res.json()

@@ -48,6 +48,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: proxyTarget,
           changeOrigin: true,
+          ws: true,
           configure(proxy) {
             proxy.on('error', (_err, req, res) => {
               const sr = res as ServerResponse | undefined

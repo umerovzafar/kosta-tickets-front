@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import DOMPurify from 'dompurify'
 import { AnimatedLink } from '@shared/ui'
 import { routes } from '@shared/config'
 import { createAuthenticatedMediaBlobUrl } from '@shared/api'
@@ -224,15 +225,14 @@ export function TodoPage() {
   const monthLabel = currentMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
 
   const stripHtml = useCallback((html: string): string => {
-    // До innerHTML: убрать вложения Outlook (cid:…) — иначе браузер делает GET cid:… и сыпет ERR_UNKNOWN_URL_SCHEME
-    const safe = html
+    // Убрать вложения Outlook (cid:…) до санитизации — иначе парсер тянет cid:…
+    const preclean = html
       .replace(/<img\b[^>]*>/gi, ' ')
       .replace(/\s(?:src|href|poster)\s*=\s*"cid:[^"]*"/gi, ' ')
       .replace(/\s(?:src|href|poster)\s*=\s*'cid:[^']*'/gi, ' ')
       .replace(/\surl\(\s*(["']?)cid:[^)"']+\1\s*\)/gi, ' url(none)')
-    const tmp = document.createElement('div')
-    tmp.innerHTML = safe
-    return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim()
+    const text = DOMPurify.sanitize(preclean, { ALLOWED_TAGS: [] })
+    return text.replace(/\s+/g, ' ').trim()
   }, [])
 
   const calendarCardsByColumn = useMemo(() => {

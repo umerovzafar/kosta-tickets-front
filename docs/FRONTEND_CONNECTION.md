@@ -12,7 +12,7 @@
 ### Пустой `VITE_API_BASE_URL` (локально через прокси)
 
 - **`apiFetch('/api/v1/...')`** → URL вида **`/api/v1/...`** на origin SPA; Vite проксирует **`/api`** на **`VITE_PROXY_TARGET`**.
-- **`getAzureLoginUrl` / `getAzureLogoutUrl` / `getAdminLoginUrl`** → относительные пути **`/api/v1/auth/...`** (тот же origin и прокси).
+- **`getAzureLoginUrl` / `getAzureLogoutUrl`** → относительные пути **`/api/v1/auth/...`** (тот же origin и прокси).
 - **`getTicketsWsUrl` / `getNotificationsWsUrl`** → **`ws://`** или **`wss://`** на **`window.location.host`** + путь **`/api/v1/.../ws...`** (прокси должен пробрасывать WebSocket, если фича используется).
 
 ## Локальная разработка
@@ -39,9 +39,13 @@ VITE_API_BASE_URL=https://ticketsback.kostalegal.com
 
 ## Авторизация и CORS
 
-- Токен: **`getAccessToken()`** → заголовок **`Authorization: Bearer`** (ставит `apiFetch`).
-- При **401** возможен редирект на логин — см. `src/shared/api/client.ts`.
-- CORS настраивается на gateway (**`FRONTEND_URL`** и др. в env контейнера gateway) — см. tickets-back `.env.example`.
+- После Azure AD gateway редиректит на **`FRONTEND_URL/auth/callback`** с **`#access_token=…`** (см. `gateway/presentation/routes/auth_azure.py`). SPA сохраняет JWT в **`localStorage`** под ключом **`access_token`** и шлёт **`Authorization: Bearer`** — так устроен **`verify_bearer_and_get_user`** в gateway.
+- Если OAuth возвращает на **origin gateway**, а SPA на другом хосте, срабатывает мост **`GET /auth/callback`** (`gateway/presentation/routes/spa_auth_callback.py`): перенос hash на фронт или запись токена в `localStorage` и переход на `/home`.
+- **`apiFetch`**: заголовок Bearer + **`credentials: 'include'`**. **`GET /api/v1/users/me`** — с **`skipAuthRedirectOn401`**, чтобы без токена не было цикла редиректов.
+- **WebSocket заявок**: при подключении передаётся **`?token=`** (см. `gateway/.../tickets.py`, `_get_ws_user`). **Уведомления**: в JSON-сообщении поле **`token`: `Bearer …`**.
+- CORS на gateway должен разрешать origin фронта; при cross-origin — **`Access-Control-Allow-Credentials`** и не использовать `*` в **`Allow-Origin`**.
+
+Подробнее контракт с текущим репозиторием **tickets-back**: **`docs/FRONTEND_SECURITY_INTEGRATION.md`**.
 
 ## Учёт времени (примеры путей)
 

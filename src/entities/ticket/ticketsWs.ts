@@ -1,6 +1,6 @@
 import { apiFetch } from '@shared/api'
 import { getAccessToken } from '@shared/lib'
-import { getApiBaseUrl, getTicketsWsUrl } from '@shared/config'
+import { getTicketsWsUrl } from '@shared/config'
 import type { Ticket, Comment, StatusItem, PriorityItem, TicketsParams } from './model/types'
 import { buildTicketsPayload } from './lib/query'
 import { BASE } from './lib/constants'
@@ -47,58 +47,58 @@ async function resolveWsBaseUrl(): Promise<string> {
   return fallback
 }
 
+/** Gateway: пользователь из query `?token=` или `?access_token=` (см. gateway/presentation/routes/tickets.py). */
 function appendTokenToWsUrl(baseUrl: string, token: string): string {
   const sep = baseUrl.includes('?') ? '&' : '?'
   return `${baseUrl}${sep}token=${encodeURIComponent(token)}`
 }
 
 function connect(token: string): Promise<WebSocket> {
-  return resolveWsBaseUrl()
-    .then(
-      (base) =>
-        new Promise<WebSocket>((resolve, reject) => {
-          const url = appendTokenToWsUrl(base, token)
-          const socket = new WebSocket(url)
-          socket.onopen = () => resolve(socket)
-          socket.onerror = () => reject(new Error('WebSocket connection failed'))
-          socket.onclose = () => {
-            if (ws !== socket) return
-            ws = null
-            lastConnectToken = null
-            rejectAllPending(new Error('WebSocket closed'))
-          }
-          socket.onmessage = (event) => {
-            try {
-              const msg = JSON.parse(event.data as string) as Record<string, unknown> & {
-                request_id?: string
-                result?: unknown
-                error?: string
-                push?: boolean
-              }
-
-              if (msg.push === true && pushHandlers.size > 0) {
-                for (const h of pushHandlers) {
-                  try {
-                    h(msg)
-                  } catch {
-                  }
-                }
-                return
-              }
-
-              const id = msg.request_id
-              if (typeof id === 'string' && pending.has(id)) {
-                const p = pending.get(id)!
-                pending.delete(id)
-                clearTimeout(p.timeoutId)
-                if (msg != null && typeof msg.error === 'string' && msg.error) p.reject(new Error(msg.error))
-                else p.resolve(msg.result)
-              }
-            } catch {
+  return resolveWsBaseUrl().then(
+    (base) =>
+      new Promise<WebSocket>((resolve, reject) => {
+        const url = appendTokenToWsUrl(base, token)
+        const socket = new WebSocket(url)
+        socket.onopen = () => resolve(socket)
+        socket.onerror = () => reject(new Error('WebSocket connection failed'))
+        socket.onclose = () => {
+          if (ws !== socket) return
+          ws = null
+          lastConnectToken = null
+          rejectAllPending(new Error('WebSocket closed'))
+        }
+        socket.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data as string) as Record<string, unknown> & {
+              request_id?: string
+              result?: unknown
+              error?: string
+              push?: boolean
             }
+
+            if (msg.push === true && pushHandlers.size > 0) {
+              for (const h of pushHandlers) {
+                try {
+                  h(msg)
+                } catch {
+                }
+              }
+              return
+            }
+
+            const id = msg.request_id
+            if (typeof id === 'string' && pending.has(id)) {
+              const p = pending.get(id)!
+              pending.delete(id)
+              clearTimeout(p.timeoutId)
+              if (msg != null && typeof msg.error === 'string' && msg.error) p.reject(new Error(msg.error))
+              else p.resolve(msg.result)
+            }
+          } catch {
           }
-        }),
-    )
+        }
+      }),
+  )
 }
 
 async function ensureSocket(): Promise<WebSocket> {
@@ -122,10 +122,10 @@ async function ensureSocket(): Promise<WebSocket> {
 }
 
 /**
- * Открывает WebSocket (токен в query — как в TICKETS_FRONTEND.md), чтобы доходили push-события.
+ * Открывает WebSocket с `?token=` — как ожидает gateway.
  */
 export async function connectTicketsWsWhenReady(): Promise<void> {
-  if (!getApiBaseUrl()) return
+  if (typeof window === 'undefined') return
   if (!getAccessToken()?.trim()) return
   try {
     await ensureSocket()
@@ -133,9 +133,6 @@ export async function connectTicketsWsWhenReady(): Promise<void> {
   }
 }
 
-/**
- * Подписка на push: `{ "push": true, "event": "...", "ticket_uuid": "...", ... }` (см. TICKETS_FRONTEND.md).
- */
 export function subscribeTicketsWsPush(handler: (msg: Record<string, unknown>) => void): () => void {
   pushHandlers.add(handler)
   return () => {
@@ -144,7 +141,7 @@ export function subscribeTicketsWsPush(handler: (msg: Record<string, unknown>) =
 }
 
 /**
- * RPC по WS: только `request_id`, `action`, `payload` — без `token` в теле (авторизация через query при connect).
+ * RPC по WS: `request_id`, `action`, `payload` — авторизация при connect через query token.
  */
 export async function sendRequest<T>(
   action: string,

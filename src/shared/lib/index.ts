@@ -4,6 +4,4 @@ export {
   removeAccessToken,
   isAuthenticated,
   logout,
-  adminLogin,
-  type AdminLoginResult,
 } from './auth'

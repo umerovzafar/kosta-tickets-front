@@ -1,7 +1,12 @@
 import { getApiBaseUrl, getAzureLoginUrl } from '@shared/config'
 import { getAccessToken, removeAccessToken } from '@shared/lib'
 
-type RequestInitAuth = RequestInit & { skipAuth?: boolean }
+type RequestInitAuth = RequestInit & {
+  /** Не добавлять Authorization (публичные эндпоинты) */
+  skipAuth?: boolean
+  /** Не редиректить на логин при 401 (например GET /users/me без токена) */
+  skipAuthRedirectOn401?: boolean
+}
 
 export async function apiFetch(
   path: string,
@@ -9,14 +14,18 @@ export async function apiFetch(
 ): Promise<Response> {
   const baseUrl = getApiBaseUrl()
   const url = path.startsWith('http') ? path : `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`
-  const { skipAuth, ...rest } = init
+  const { skipAuth = false, skipAuthRedirectOn401 = false, ...rest } = init
   const headers = new Headers(rest.headers)
   if (!skipAuth) {
     const token = getAccessToken()
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
-  const response = await fetch(url, { ...rest, headers })
-  if (response.status === 401) {
+  const response = await fetch(url, {
+    ...rest,
+    headers,
+    credentials: 'include',
+  })
+  if (response.status === 401 && !skipAuthRedirectOn401 && !skipAuth) {
     removeAccessToken()
     window.location.href = getAzureLoginUrl() || '/api/v1/auth/azure/login'
     return response
@@ -30,7 +39,7 @@ export function getApiUrl(path: string): string {
 }
 
 /**
- * Fetches a media file from /api/v1/media/{path} with Authorization header
+ * Fetches a media file from /api/v1/media/{path} with Authorization
  * and returns a temporary blob URL. The caller is responsible for calling
  * URL.revokeObjectURL() when the URL is no longer needed.
  */
@@ -69,7 +78,6 @@ export function getMediaPathFromMediaUrl(url: string): string | null {
 
 /**
  * Загружает файл с Authorization и возвращает временный blob URL для показа в &lt;img&gt; (или в новой вкладке).
- * Обычный открытый URL на /api/v1/media/… без токена даёт 401.
  * Вызывающий обязан вызвать URL.revokeObjectURL() после использования.
  */
 export async function createAuthenticatedMediaBlobUrl(urlOrPath: string): Promise<string> {

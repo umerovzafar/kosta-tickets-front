@@ -163,6 +163,7 @@ export class NotificationsWSClient {
     })
   }
 
+  /** Gateway ожидает `token` в теле сообщения (см. gateway/presentation/routes/notifications.py). */
   send(action: string, payload: Record<string, unknown> = {}): Promise<unknown> {
     const token = this.getToken()
     if (!token?.trim()) {

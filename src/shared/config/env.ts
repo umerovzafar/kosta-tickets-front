@@ -25,7 +25,7 @@ function getBrowserOrigin(): string {
   return `${window.location.protocol}//${window.location.host}`
 }
 
-function authPath(suffix: 'azure/login' | 'azure/logout' | 'admin/login'): string {
+function authPath(suffix: 'azure/login' | 'azure/logout'): string {
   return `/api/v1/auth/${suffix}`
 }
 
@@ -39,12 +39,6 @@ export function getAzureLogoutUrl(): string {
   const base = getApiBaseUrl()
   if (base) return `${base}/api/v1/auth/azure/logout`
   return authPath('azure/logout')
-}
-
-export function getAdminLoginUrl(): string {
-  const base = getApiBaseUrl()
-  if (base) return `${base}/api/v1/auth/admin/login`
-  return authPath('admin/login')
 }
 
 function getWsUrl(path: string): string {
